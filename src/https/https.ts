@@ -34,6 +34,10 @@ export class Https {
     return this.ky.put(url, options).json<T>();
   }
 
+  patch<T = unknown>(url: Input, options?: Options): Promise<T> {
+    return this.ky.patch(url, options).json<T>();
+  }
+
   /** 对应 HTTP DELETE（ky 的 `delete`） */
   del<T = unknown>(url: Input, options?: Options): Promise<T> {
     return this.ky.delete(url, options).json<T>();

@@ -1,12 +1,13 @@
 "use client";
 
-import { Button, Card, Form, Input, Typography } from "antd";
+import { Alert, Button, Card, Form, Input, Typography } from "antd";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { login } from "@/api";
 
 type LoginFields = {
-  email: string;
+  account: string;
   password: string;
 };
 
@@ -14,18 +15,23 @@ export function LoginForm() {
   const router = useRouter();
   const [form] = Form.useForm<LoginFields>();
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  async function onFinish(_values: LoginFields) {
+  async function onFinish(values: LoginFields) {
+    setError(null);
     setPending(true);
-    await new Promise((r) => setTimeout(r, 300));
-
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("web_agent_auth", "1");
+    try {
+      await login({
+        account: values.account.trim(),
+        password: values.password,
+      });
+      router.push("/");
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "登录失败，请稍后重试");
+    } finally {
+      setPending(false);
     }
-
-    setPending(false);
-    router.push("/");
-    router.refresh();
   }
 
   return (
@@ -44,17 +50,22 @@ export function LoginForm() {
         layout="vertical"
         requiredMark={false}
         onFinish={onFinish}
+        onValuesChange={() => setError(null)}
       >
+        {error ? (
+          <Alert className="mb-4" type="error" message={error} showIcon closable onClose={() => setError(null)} />
+        ) : null}
+
         <Form.Item
-          label="邮箱"
-          name="email"
+          label="账号"
+          name="account"
           normalize={(v) => (typeof v === "string" ? v.trim() : v)}
           rules={[
-            { required: true, message: "请填写邮箱" },
+            { required: true, message: "请填写账号" },
             { type: "email", message: "请输入有效邮箱" },
           ]}
         >
-          <Input autoComplete="email" placeholder="you@example.com" size="large" />
+          <Input autoComplete="username" placeholder="you@example.com" size="large" />
         </Form.Item>
 
         <Form.Item

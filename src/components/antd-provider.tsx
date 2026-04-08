@@ -1,8 +1,53 @@
 "use client";
 
-import { ConfigProvider } from "antd";
+import { ConfigProvider, theme } from "antd";
 import zhCN from "antd/locale/zh_CN";
+import { useEffect } from "react";
+import { useAppTheme } from "./theme-context";
 
-export function AntdProvider({ children }: { children: React.ReactNode }) {
-  return <ConfigProvider locale={zhCN}>{children}</ConfigProvider>;
+export function AntdProvider({
+  children,
+  forceLight = false,
+}: {
+  children: React.ReactNode;
+  /** `/login` 等页面固定浅色，不跟随全局主题 */
+  forceLight?: boolean;
+}) {
+  const { mode } = useAppTheme();
+
+  const dark = forceLight ? false : mode === "dark";
+
+  useEffect(() => {
+    const bg = dark ? "#0b0c0f" : "#f5f5f5";
+    const fg = dark ? "#ededed" : "rgba(0,0,0,0.88)";
+    document.body.style.backgroundColor = bg;
+    document.body.style.color = fg;
+    document.documentElement.style.backgroundColor = bg;
+    document.documentElement.style.color = fg;
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  }, [dark]);
+
+  const isDark = dark;
+
+  return (
+    <ConfigProvider
+      locale={zhCN}
+      theme={{
+        algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
+        token: isDark
+          ? {
+              colorBgLayout: "#0b0c0f",
+              colorBgContainer: "#141519",
+              colorBorderSecondary: "rgba(255,255,255,0.08)",
+            }
+          : {
+              colorBgLayout: "#f5f5f5",
+              colorBgContainer: "#ffffff",
+              colorBorderSecondary: "rgba(0,0,0,0.06)",
+            },
+      }}
+    >
+      {children}
+    </ConfigProvider>
+  );
 }

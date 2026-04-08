@@ -1,3 +1,4 @@
+export { api } from "./api";
 export {
   createHttps,
   getHttps,

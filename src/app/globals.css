@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
+/* 默认浅色，避免 html 与 body 不同步时出现底部「黑条」；具体主题由 AntdProvider 同步到 html/body */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f5f5f5;
+  --foreground: rgba(0, 0, 0, 0.88);
 }
 
 @theme inline {
@@ -12,15 +13,24 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  height: 100%;
+  background-color: var(--background);
 }
 
 body {
-  background: var(--background);
+  min-height: 100%;
+  min-height: 100dvh;
+  margin: 0;
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Ant Design Sider 子容器默认不撑满高度，底部会露出父级/根节点背景；仪表盘侧栏需纵向铺满 */
+.dashboard-sider.ant-layout-sider .ant-layout-sider-children {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
