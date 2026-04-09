@@ -15,7 +15,7 @@ import {
   Typography,
   message,
 } from "antd";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getAvailableSettingsModels,
   getGlobalLlmSettings,
@@ -45,6 +45,19 @@ const DEFAULT_MODEL_ROWS: { key: string; label: string; required?: boolean }[] =
 
 export default function VendorsPage() {
   const [messageApi, messageContextHolder] = message.useMessage();
+  const messageApiRef = useRef(messageApi);
+  messageApiRef.current = messageApi;
+  /** 避免在 concurrent 下被判定为 render 阶段调 notice（antd 警告） */
+  const showError = useCallback((text: string) => {
+    queueMicrotask(() => {
+      messageApiRef.current.error(text);
+    });
+  }, []);
+  const showSuccess = useCallback((text: string) => {
+    queueMicrotask(() => {
+      messageApiRef.current.success(text);
+    });
+  }, []);
   const [market, setMarket] = useState<Vendor[]>([]);
   const [installed, setInstalled] = useState<Vendor[]>([]);
   const [globalSettings, setGlobalSettings] = useState<GlobalLlmSettings | null>(null);
@@ -106,11 +119,11 @@ export default function VendorsPage() {
       setMarket(list);
     } catch (e) {
       const text = e instanceof Error ? e.message : "查询厂商市场失败";
-      messageApi.error(text);
+      showError(text);
     } finally {
       setLoadingMarket(false);
     }
-  }, [messageApi]);
+  }, [showError]);
 
   const loadInstalled = useCallback(async () => {
     setLoadingInstalled(true);
@@ -119,11 +132,11 @@ export default function VendorsPage() {
       setInstalled(list);
     } catch (e) {
       const text = e instanceof Error ? e.message : "查询已安装厂商失败";
-      messageApi.error(text);
+      showError(text);
     } finally {
       setLoadingInstalled(false);
     }
-  }, [messageApi]);
+  }, [showError]);
 
   const loadGlobalSettings = useCallback(async () => {
     setLoadingGlobalSettings(true);
@@ -133,11 +146,11 @@ export default function VendorsPage() {
       setDefaults(defaultsFromGlobal(g));
     } catch (e) {
       const text = e instanceof Error ? e.message : "获取全局模型设置失败";
-      messageApi.error(text);
+      showError(text);
     } finally {
       setLoadingGlobalSettings(false);
     }
-  }, [messageApi]);
+  }, [showError]);
 
   const loadAvailableModels = useCallback(async () => {
     setLoadingModels(true);
@@ -146,12 +159,12 @@ export default function VendorsPage() {
       setAvailableModels(list);
     } catch (e) {
       const text = e instanceof Error ? e.message : "查询可选模型失败";
-      messageApi.error(text);
+      showError(text);
       setAvailableModels([]);
     } finally {
       setLoadingModels(false);
     }
-  }, [messageApi]);
+  }, [showError]);
 
   useEffect(() => {
     void loadMarket();
@@ -173,11 +186,11 @@ export default function VendorsPage() {
         setDefaults(defaultsFromGlobal(g));
       } catch (e) {
         const text = e instanceof Error ? e.message : "保存失败";
-        messageApi.error(text);
+        showError(text);
         await loadGlobalSettings();
       }
     },
-    [loadGlobalSettings, messageApi]
+    [loadGlobalSettings, showError]
   );
 
   const openAddModal = (vendor: Vendor, isInstalled: boolean) => {
@@ -187,7 +200,7 @@ export default function VendorsPage() {
   };
 
   const handleModalSuccess = async () => {
-    messageApi.success("保存成功");
+    showSuccess("保存成功");
     await loadInstalled();
     await loadMarket();
     await loadGlobalSettings();

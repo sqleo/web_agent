@@ -1,6 +1,12 @@
 "use client";
 
-import { DeleteOutlined, MessageOutlined, PaperClipOutlined } from "@ant-design/icons";
+import {
+  BranchesOutlined,
+  DeleteOutlined,
+  MessageOutlined,
+  PaperClipOutlined,
+  PlayCircleOutlined,
+} from "@ant-design/icons";
 import type { Attachment } from "@ant-design/x/es/attachments";
 import {
   Attachments,
@@ -10,11 +16,20 @@ import {
   XProvider,
 } from "@ant-design/x";
 import type { BubbleListRef } from "@ant-design/x/es/bubble/interface";
+import type { ActionsComponents } from "@ant-design/x/es/sender/interface";
 import xZhCN from "@ant-design/x/locale/zh_CN";
-import { App, Button, Flex, theme } from "antd";
+import { App, Button, Flex, Input, Modal, Radio, Select, Space, Spin, theme, Typography } from "antd";
 import type { MenuProps } from "antd";
 import type { ConversationItemType } from "@ant-design/x/es/conversations/interface";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  type ChatCheckpointItem,
+  deleteAgentChatThread,
+  getAgentChatHistory,
+  pauseAgentChat,
+  resumeAgentChat,
+  travelAgentChat,
+} from "@/api/agent-chat";
 import { getAuthorizationHeaderValue } from "@/api/auth-storage";
 import { iterateAgentSseEvents } from "@/lib/agent-chat-sse";
 import { getAgentChatStreamUrl } from "@/lib/agent-chat-url";
@@ -103,6 +118,8 @@ function ChatPanelInner() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const activeIdRef = useRef<string | null>(null);
+  /** 暂停后用于「继续」时定位同一条助手气泡并续写 SSE */
+  const streamContextRef = useRef<{ sessionId: string; assistantKey: string } | null>(null);
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -110,6 +127,16 @@ function ChatPanelInner() {
   const [senderValue, setSenderValue] = useState("");
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
+  /** 用户点了「暂停」且本会话在等待继续（可与时间旅行后的 resume 配合） */
+  const [pausedSessionId, setPausedSessionId] = useState<string | null>(null);
+
+  const [travelOpen, setTravelOpen] = useState(false);
+  const [travelLoading, setTravelLoading] = useState(false);
+  const [travelSubmitting, setTravelSubmitting] = useState(false);
+  const [travelCheckpoints, setTravelCheckpoints] = useState<ChatCheckpointItem[]>([]);
+  const [travelCheckpointId, setTravelCheckpointId] = useState<string | undefined>();
+  const [travelMode, setTravelMode] = useState<"fork" | "replay">("fork");
+  const [travelForkInput, setTravelForkInput] = useState("");
 
   useEffect(() => {
     activeIdRef.current = activeId;
@@ -191,7 +218,27 @@ function ChatPanelInner() {
   );
 
   const removeSession = useCallback(
-    (id: string) => {
+    async (id: string) => {
+      const target = sessions.find((s) => s.id === id);
+      if (!target) {
+        return;
+      }
+      const tid = target.threadId;
+      if (tid) {
+        const authHeader = getAuthorizationHeaderValue();
+        if (!authHeader) {
+          messageApi.error("请先登录");
+          return;
+        }
+        try {
+          const data = await deleteAgentChatThread(tid);
+          messageApi.success(data.message || "删除成功");
+        } catch (e) {
+          messageApi.error(e instanceof Error ? e.message : "删除对话失败");
+          return;
+        }
+      }
+
       const next = sessions.filter((s) => s.id !== id);
       if (next.length === 0) {
         const fresh = emptySession();
@@ -204,7 +251,7 @@ function ChatPanelInner() {
       }
       persist(next, nextActive);
     },
-    [sessions, activeId, persist]
+    [sessions, activeId, persist, messageApi]
   );
 
   const getMenu = useCallback(
@@ -215,11 +262,331 @@ function ChatPanelInner() {
           icon: <DeleteOutlined />,
           label: "删除会话",
           danger: true,
-          onClick: () => removeSession(String(conv.key)),
+          onClick: () => {
+            void removeSession(String(conv.key));
+          },
         },
       ],
     }),
     [removeSession]
+  );
+
+  const consumeAgentSseLoop = useCallback(
+    async (
+      res: Response,
+      sessionId: string,
+      assistantKey: string,
+      ac: AbortController
+    ) => {
+      let sawContentDelta = false;
+      let sawReasoningDelta = false;
+
+      const updateAssistantMsg = (
+        updater: (msg: StoredBubble) => Partial<StoredBubble>
+      ) => {
+        setSessions((prev) => {
+          const next = prev.map((s) => {
+            if (s.id !== sessionId) {
+              return s;
+            }
+            return {
+              ...s,
+              messages: s.messages.map((m) =>
+                m.key === assistantKey ? { ...m, ...updater(m) } : m
+              ),
+              updatedAt: Date.now(),
+            };
+          });
+          saveStore({ sessions: next, activeId: activeIdRef.current });
+          return next;
+        });
+      };
+
+      for await (const ev of iterateAgentSseEvents(res)) {
+        if (ev.type === "start") {
+          setSessions((prev) => {
+            const next = prev.map((s) =>
+              s.id === sessionId ? { ...s, threadId: ev.thread_id } : s
+            );
+            saveStore({ sessions: next, activeId: activeIdRef.current });
+            return next;
+          });
+          continue;
+        }
+
+        if (ev.type === "error") {
+          messageApi.error(ev.message);
+          updateAssistantMsg((m) => ({
+            text: m.text || ev.message,
+          }));
+          break;
+        }
+
+        if (ev.type === "text") {
+          if (ev.content) {
+            sawContentDelta = true;
+          }
+          updateAssistantMsg((m) => ({
+            text: m.text + ev.content,
+          }));
+        }
+
+        if (ev.type === "thinking") {
+          if (ev.content) {
+            sawReasoningDelta = true;
+          }
+          updateAssistantMsg((m) => ({
+            reasoning: (m.reasoning ?? "") + ev.content,
+          }));
+        }
+
+        if (ev.type === "tool") {
+          updateAssistantMsg((m) => ({
+            toolCalls: [...(m.toolCalls ?? []), { content: ev.content }],
+          }));
+        }
+
+        if (ev.type === "reference") {
+          updateAssistantMsg((m) => ({
+            references: [
+              ...(m.references ?? []),
+              { tool: ev.tool, content: ev.content },
+            ],
+          }));
+        }
+
+        if (ev.type === "done") {
+          setSessions((prev) => {
+            const next = prev.map((s) =>
+              s.id === sessionId ? { ...s, threadId: ev.thread_id } : s
+            );
+            saveStore({ sessions: next, activeId: activeIdRef.current });
+            return next;
+          });
+        }
+      }
+
+      if (!ac.signal.aborted && !sawContentDelta && !sawReasoningDelta) {
+        updateAssistantMsg((m) => ({
+          text:
+            m.text.trim() === ""
+              ? "流已结束，但未收到正文或思考内容。请在后端确认是否在流中推送 type 为 text / thinking 的片段。"
+              : m.text,
+        }));
+      }
+    },
+    [messageApi]
+  );
+
+  const handlePauseGeneration = useCallback(async () => {
+    if (!loading || !activeSession) {
+      return;
+    }
+    const sid = activeSession.id;
+    if (activeSession.threadId) {
+      try {
+        await pauseAgentChat(activeSession.threadId, { reason: "user_request" });
+        messageApi.success("已暂停生成");
+      } catch (e) {
+        messageApi.error(e instanceof Error ? e.message : "暂停失败");
+        return;
+      }
+      setPausedSessionId(sid);
+    }
+    streamAbortRef.current?.abort();
+  }, [loading, activeSession, messageApi]);
+
+  const handleResumeGeneration = useCallback(async () => {
+    if (!activeSession?.threadId || pausedSessionId !== activeSession.id) {
+      return;
+    }
+    const authHeader = getAuthorizationHeaderValue();
+    if (!authHeader) {
+      messageApi.error("请先登录");
+      return;
+    }
+    const sessionId = activeSession.id;
+    const tid = activeSession.threadId;
+    let assistantKey = streamContextRef.current?.assistantKey;
+    if (streamContextRef.current?.sessionId !== sessionId) {
+      assistantKey = undefined;
+    }
+    if (!assistantKey) {
+      const lastAi = [...activeSession.messages].reverse().find((m) => m.role === "ai");
+      assistantKey = lastAi?.key;
+    }
+    if (!assistantKey) {
+      messageApi.error("无法定位助手消息，请重新发送一条消息");
+      return;
+    }
+
+    streamContextRef.current = { sessionId, assistantKey };
+    setPausedSessionId(null);
+    streamAbortRef.current?.abort();
+    const ac = new AbortController();
+    streamAbortRef.current = ac;
+    setLoading(true);
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      Authorization: authHeader,
+    };
+    const streamUrl = getAgentChatStreamUrl();
+
+    try {
+      await resumeAgentChat(tid, {
+        resume_value: { action: "continue_generation" },
+      });
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : "继续生成失败");
+      setPausedSessionId(sessionId);
+      setLoading(false);
+      return;
+    }
+
+    /** 恢复后拉流：需与后端约定空 message 表示续写；若不符请改为专用字段 */
+    const body = JSON.stringify({
+      thread_id: tid,
+      message: "",
+    });
+
+    try {
+      const res = await fetch(streamUrl, {
+        method: "POST",
+        headers,
+        body,
+        signal: ac.signal,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        messageApi.error(errText.slice(0, 280) || `请求失败（${res.status}）`);
+        setPausedSessionId(sessionId);
+        streamContextRef.current = null;
+        return;
+      }
+
+      await consumeAgentSseLoop(res, sessionId, assistantKey, ac);
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        return;
+      }
+      const msg = e instanceof Error ? e.message : "流式连接失败";
+      messageApi.error(msg);
+      streamContextRef.current = null;
+    } finally {
+      setLoading(false);
+      if (streamAbortRef.current === ac) {
+        streamAbortRef.current = null;
+      }
+      if (!ac.signal.aborted) {
+        streamContextRef.current = null;
+        setPausedSessionId(null);
+      }
+    }
+  }, [activeSession, consumeAgentSseLoop, messageApi, pausedSessionId]);
+
+  useEffect(() => {
+    if (!travelOpen || !activeSession?.threadId) {
+      return;
+    }
+    let cancelled = false;
+    setTravelLoading(true);
+    void (async () => {
+      try {
+        const data = await getAgentChatHistory(activeSession.threadId!);
+        if (cancelled) {
+          return;
+        }
+        setTravelCheckpoints(data.checkpoints);
+        setTravelCheckpointId(data.checkpoints[0]?.checkpoint_id);
+      } catch (e) {
+        if (!cancelled) {
+          messageApi.error(e instanceof Error ? e.message : "加载 checkpoint 失败");
+          setTravelCheckpoints([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setTravelLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [travelOpen, activeSession?.threadId, messageApi]);
+
+  const handleTravelConfirm = useCallback(async () => {
+    if (!activeSession?.threadId || !travelCheckpointId) {
+      messageApi.warning("请选择 checkpoint");
+      return;
+    }
+    setTravelSubmitting(true);
+    try {
+      const data = await travelAgentChat(activeSession.threadId, {
+        checkpoint_id: travelCheckpointId,
+        mode: travelMode,
+        new_input:
+          travelMode === "fork" && travelForkInput.trim()
+            ? travelForkInput.trim()
+            : undefined,
+      });
+      messageApi.success(data.message || "时间旅行成功");
+      const sessionId = activeSession.id;
+      const newTid = data.new_thread_id ?? data.thread_id;
+      setSessions((prev) => {
+        const next = prev.map((s) =>
+          s.id === sessionId ? { ...s, threadId: newTid } : s
+        );
+        saveStore({ sessions: next, activeId: activeIdRef.current });
+        return next;
+      });
+      setTravelOpen(false);
+      setTravelForkInput("");
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : "时间旅行失败");
+    } finally {
+      setTravelSubmitting(false);
+    }
+  }, [
+    activeSession?.id,
+    activeSession?.threadId,
+    messageApi,
+    travelCheckpointId,
+    travelForkInput,
+    travelMode,
+  ]);
+
+  /** 暂停待继续时，右侧圆钮为「继续」（与生成中的暂停钮同一位置）；发新消息可用 Enter */
+  const renderSenderSuffix = useCallback(
+    (oriNode: ReactNode, { components }: { components: ActionsComponents }) => {
+      const showResume =
+        !loading &&
+        pausedSessionId === activeSession?.id &&
+        Boolean(activeSession?.threadId);
+
+      if (!showResume) {
+        return oriNode;
+      }
+
+      const { SpeechButton } = components;
+      return (
+        <Flex align="center" gap={4}>
+          <SpeechButton />
+          <Button
+            type="primary"
+            shape="circle"
+            icon={<PlayCircleOutlined />}
+            aria-label="继续生成"
+            onClick={() => {
+              void handleResumeGeneration();
+            }}
+          />
+        </Flex>
+      );
+    },
+    [activeSession?.id, activeSession?.threadId, handleResumeGeneration, loading, pausedSessionId]
   );
 
   const handleSubmit = useCallback(
@@ -253,6 +620,9 @@ function ChatPanelInner() {
         role: "ai",
         text: "",
       };
+
+      streamContextRef.current = { sessionId, assistantKey };
+      setPausedSessionId(null);
 
       setSessions((prev) => {
         const next = prev.map((s) => {
@@ -301,6 +671,7 @@ function ChatPanelInner() {
         if (!res.ok) {
           const errText = await res.text();
           messageApi.error(errText.slice(0, 280) || `请求失败（${res.status}）`);
+          streamContextRef.current = null;
           setSessions((prev) => {
             const next = prev.map((s) => {
               if (s.id !== sessionId) {
@@ -322,110 +693,12 @@ function ChatPanelInner() {
           return;
         }
 
-        let sawContentDelta = false;
-        let sawReasoningDelta = false;
-
-        const updateAssistantMsg = (
-          updater: (msg: StoredBubble) => Partial<StoredBubble>
-        ) => {
-          setSessions((prev) => {
-            const next = prev.map((s) => {
-              if (s.id !== sessionId) {
-                return s;
-              }
-              return {
-                ...s,
-                messages: s.messages.map((m) =>
-                  m.key === assistantKey ? { ...m, ...updater(m) } : m
-                ),
-                updatedAt: Date.now(),
-              };
-            });
-            saveStore({ sessions: next, activeId: activeIdRef.current });
-            return next;
-          });
-        };
-
-        for await (const ev of iterateAgentSseEvents(res)) {
-          if (ev.type === "start") {
-            setSessions((prev) => {
-              const next = prev.map((s) =>
-                s.id === sessionId ? { ...s, threadId: ev.thread_id } : s
-              );
-              saveStore({ sessions: next, activeId: activeIdRef.current });
-              return next;
-            });
-            continue;
-          }
-
-          if (ev.type === "error") {
-            messageApi.error(ev.message);
-            updateAssistantMsg((m) => ({
-              text: m.text || ev.message,
-            }));
-            break;
-          }
-
-          if (ev.type === "text") {
-            if (ev.content) {
-              sawContentDelta = true;
-            }
-            updateAssistantMsg((m) => ({
-              text: m.text + ev.content,
-            }));
-          }
-
-          if (ev.type === "thinking") {
-            if (ev.content) {
-              sawReasoningDelta = true;
-            }
-            updateAssistantMsg((m) => ({
-              reasoning: (m.reasoning ?? "") + ev.content,
-            }));
-          }
-
-          if (ev.type === "tool") {
-            updateAssistantMsg((m) => ({
-              toolCalls: [...(m.toolCalls ?? []), { content: ev.content }],
-            }));
-          }
-
-          if (ev.type === "reference") {
-            updateAssistantMsg((m) => ({
-              references: [
-                ...(m.references ?? []),
-                { tool: ev.tool, content: ev.content },
-              ],
-            }));
-          }
-
-          if (ev.type === "done") {
-            setSessions((prev) => {
-              const next = prev.map((s) =>
-                s.id === sessionId ? { ...s, threadId: ev.thread_id } : s
-              );
-              saveStore({ sessions: next, activeId: activeIdRef.current });
-              return next;
-            });
-          }
-        }
-
-        if (
-          !ac.signal.aborted &&
-          !sawContentDelta &&
-          !sawReasoningDelta
-        ) {
-          updateAssistantMsg((m) => ({
-            text:
-              m.text.trim() === ""
-                ? "流已结束，但未收到正文或思考内容。请在后端确认是否在流中推送 type 为 text / thinking 的片段。"
-                : m.text,
-          }));
-        }
+        await consumeAgentSseLoop(res, sessionId, assistantKey, ac);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") {
           return;
         }
+        streamContextRef.current = null;
         const msg = e instanceof Error ? e.message : "流式连接失败";
         messageApi.error(msg);
         setSessions((prev) => {
@@ -449,9 +722,12 @@ function ChatPanelInner() {
         if (streamAbortRef.current === ac) {
           streamAbortRef.current = null;
         }
+        if (!ac.signal.aborted) {
+          streamContextRef.current = null;
+        }
       }
     },
-    [activeSession, files, messageApi]
+    [activeSession, consumeAgentSseLoop, files, messageApi]
   );
 
   if (!mounted || !activeSession) {
@@ -553,6 +829,16 @@ function ChatPanelInner() {
             background: token.colorFillAlter,
           }}
         >
+          <Space wrap size={8} style={{ marginBottom: 10 }}>
+            <Button
+              size="small"
+              icon={<BranchesOutlined />}
+              disabled={loading || !activeSession.threadId}
+              onClick={() => setTravelOpen(true)}
+            >
+              时间旅行
+            </Button>
+          </Space>
           {files.length > 0 ? (
             <Attachments
               items={files}
@@ -593,7 +879,11 @@ function ChatPanelInner() {
             loading={loading}
             value={senderValue}
             onChange={(v) => setSenderValue(v)}
-            placeholder="输入消息，Enter 发送；右侧支持语音"
+            placeholder="输入消息，Enter 发送；支持语音；生成中右侧圆钮暂停；暂停后同位置圆钮继续"
+            suffix={renderSenderSuffix}
+            onCancel={() => {
+              void handlePauseGeneration();
+            }}
             prefix={
               <Button
                 type="text"
@@ -622,6 +912,55 @@ function ChatPanelInner() {
           />
         </div>
       </Flex>
+
+      <Modal
+        title="时间旅行"
+        open={travelOpen}
+        onCancel={() => setTravelOpen(false)}
+        onOk={() => void handleTravelConfirm()}
+        confirmLoading={travelSubmitting}
+        okText="执行"
+        destroyOnHidden
+      >
+        <Spin spinning={travelLoading}>
+          <Space orientation="vertical" size="middle" className="w-full">
+            <Typography.Text type="secondary">
+              fork 会创建新分支并可能返回新 thread_id；replay 在当前线程重放。之后可与「继续生成」配合从中断点恢复。
+            </Typography.Text>
+            <div className="w-full">
+              <div className="mb-1">Checkpoint</div>
+              <Select
+                className="w-full"
+                placeholder="选择 checkpoint"
+                value={travelCheckpointId}
+                onChange={(v) => setTravelCheckpointId(v)}
+                options={travelCheckpoints.map((c) => ({
+                  value: c.checkpoint_id,
+                  label: `${c.timestamp} · ${c.content_preview.slice(0, 40)}${
+                    c.content_preview.length > 40 ? "…" : ""
+                  }`,
+                }))}
+                notFoundContent={travelLoading ? <Spin size="small" /> : undefined}
+              />
+            </div>
+            <Radio.Group
+              value={travelMode}
+              onChange={(e) => setTravelMode(e.target.value)}
+            >
+              <Radio value="fork">fork（新分支）</Radio>
+              <Radio value="replay">replay（重放）</Radio>
+            </Radio.Group>
+            {travelMode === "fork" ? (
+              <Input.TextArea
+                placeholder="可选：分叉后的新输入"
+                value={travelForkInput}
+                onChange={(e) => setTravelForkInput(e.target.value)}
+                rows={3}
+              />
+            ) : null}
+          </Space>
+        </Spin>
+      </Modal>
     </Flex>
   );
 }
