@@ -4,6 +4,7 @@ import {
   ApiOutlined,
   BarChartOutlined,
   DatabaseOutlined,
+  FolderOpenOutlined,
   MessageOutlined,
   RocketOutlined,
   SearchOutlined,
@@ -20,13 +21,14 @@ const { Header, Sider, Content } = Layout;
 const ROUTE_TITLES: Record<string, string> = {
   "/": "首页",
   "/knowledge": "知识库",
+  "/files": "文件管理",
   "/ai-tool": "AI tool",
   "/vendors": "厂商管理",
   "/chat": "聊天",
   "/settings": "账户设置",
 };
 
-const MENU_KEYS = ["/", "/knowledge", "/ai-tool", "/vendors", "/chat"] as const;
+const MENU_KEYS = ["/", "/knowledge", "/files", "/ai-tool", "/vendors", "/chat"] as const;
 
 function normalizePath(path: string): string {
   if (path === "/") {
@@ -119,6 +121,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   key: "/knowledge",
                   icon: <DatabaseOutlined />,
                   label: "知识库",
+                },
+                {
+                  key: "/files",
+                  icon: <FolderOpenOutlined />,
+                  label: "文件管理",
                 },
                 {
                   key: "/ai-tool",

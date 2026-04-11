@@ -82,3 +82,134 @@ export type PatchVendorConfigBody = {
   status?: number;
   extra_config?: Record<string, unknown>;
 };
+
+/** 文件业务生命周期（GET/POST 文件接口里的 status） */
+export type FileLifecycleStatus = "draft" | "reviewed" | "approved" | "archived";
+
+/** 是否已生成中间 Markdown */
+export type FileParseStatus = "pending" | "parsed";
+
+/**
+ * 知识库内入库流水线状态（GET /knowledge-bases/{kb_id}/files 的 pipeline_status）
+ */
+export type KnowledgePipelineStatus =
+  | "pending_md"
+  | "ready_to_index"
+  | "queued"
+  | "indexing"
+  | "indexed"
+  | "failed";
+
+/** @deprecated 旧版字段名，请使用 FileLifecycleStatus */
+export type FileStatus = FileLifecycleStatus;
+
+/**
+ * GET /files、上传、重传等返回的单个文件（FileUploadItem）
+ */
+export type FileUploadItem = {
+  id: number;
+  folder_id: number | null;
+  file_name: string;
+  file_ext: string;
+  mime_type: string;
+  size_bytes: number;
+  project_code: string | null;
+  source: string;
+  /** 业务状态 */
+  status: FileLifecycleStatus;
+  /** 是否已解析出中间 md */
+  parse_status: FileParseStatus;
+  /** 内容语义版本，如 0.0.1 */
+  content_semver: string;
+  storage_key: string;
+  file_url: string;
+  created_at: string;
+  uploader_user_id?: number | null;
+  uploader_name?: string | null;
+  parsed_md_storage_key?: string | null;
+};
+
+export type FileItem = FileUploadItem;
+
+/**
+ * GET /knowledge-bases/{kb_id}/files 列表项（在 FileUploadItem 基础上扩展库内流水线字段）
+ */
+export type KnowledgeBaseFileListItem = FileUploadItem & {
+  kb_file_id: number;
+  pipeline_status: KnowledgePipelineStatus;
+  pipeline_error?: string | null;
+  indexed_at?: string | null;
+  chunk_count?: number | null;
+  /** 该库最近一次成功入库时的内容版本；未成功过为 null */
+  indexed_content_semver?: string | null;
+  /** 当前文件 content_semver 新于 indexed_content_semver 时为 true */
+  has_newer_content?: boolean;
+};
+
+export type FileListData = {
+  total: number;
+  page: number;
+  page_size: number;
+  items: FileUploadItem[];
+};
+
+/** POST /files/{file_id}/parse-md 成功响应 */
+export type ParseFileMdResult = {
+  content_semver?: string;
+  parse_status?: FileParseStatus;
+  parsed_md_storage_key: string;
+  parsed_md_url: string;
+};
+
+export type FileFolderTreeNode = {
+  id: number;
+  name: string;
+  parent_folder_id: number | null;
+  project_code?: string | null;
+  description?: string | null;
+  children?: FileFolderTreeNode[];
+};
+
+/** 知识库（新建/详情通用字段，以服务端为准可扩展） */
+export type KnowledgeBase = {
+  id: number;
+  name: string;
+  code?: string | null;
+  description?: string | null;
+  thumbnail_url?: string | null;
+};
+
+export type CreateKnowledgeBaseBody = {
+  name: string;
+  code?: string;
+  description?: string;
+  thumbnail_url?: string;
+};
+
+export type KnowledgeBaseBatchFilesBody = {
+  file_ids: number[];
+};
+
+/** POST /knowledge-bases/{kb_id}/files/index 等批量文件操作请求体 */
+export type KnowledgeBaseFileOperateRequest = KnowledgeBaseBatchFilesBody;
+
+export type KnowledgeBaseBatchFilesResult = {
+  affected_file_ids: number[];
+  skipped_file_ids: number[];
+};
+
+export type KnowledgeBaseFilesListData = {
+  knowledge_base_id: number;
+  total: number;
+  page: number;
+  page_size: number;
+  items: KnowledgeBaseFileListItem[];
+};
+
+/** GET /knowledge-bases 列表（分页字段以服务端为准，缺省时由前端归一化） */
+export type KnowledgeBaseListData = {
+  items: KnowledgeBase[];
+  total: number;
+  page: number;
+  page_size: number;
+};
