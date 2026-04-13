@@ -1,0 +1,15 @@
+# 本地用 compose 构建/运行（默认仍打 linux/amd64，与 CVM 一致）
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8888}
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    env_file:
+      - path: .env_web
+        required: false

@@ -88,6 +88,8 @@ export function LoginForm() {
       </Form>
 
       <Typography.Paragraph type="secondary" className="!mb-0 mt-8 text-center">
+        <Link href="/register">没有账号？去注册</Link>
+        <span className="mx-2 text-zinc-300">|</span>
         <Link href="/">返回首页</Link>
       </Typography.Paragraph>
     </Card>

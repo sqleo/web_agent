@@ -299,9 +299,20 @@ export function MonitorHomeDashboard() {
                   height={CHART_H}
                   autoFit
                   legend={{ position: "top" }}
-                  color={(datum: { category?: string }) =>
-                    TOKEN_CATEGORY_COLOR[datum.category ?? ""] ?? "#8c8c8c"
-                  }
+                  scale={{
+                    color: {
+                      domain: [
+                        "输入缓存命中",
+                        "输入缓存未命中",
+                        "输出 Tokens",
+                      ],
+                      range: [
+                        TOKEN_CATEGORY_COLOR["输入缓存命中"],
+                        TOKEN_CATEGORY_COLOR["输入缓存未命中"],
+                        TOKEN_CATEGORY_COLOR["输出 Tokens"],
+                      ],
+                    },
+                  }}
                 />
               )}
             </Card>

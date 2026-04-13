@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "docker:build-push": "bash scripts/docker-build-push.sh"
   },
   "dependencies": {
     "@ant-design/charts": "^2.6.7",

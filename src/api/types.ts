@@ -24,6 +24,13 @@ export type LoginRequest = {
   password: string;
 };
 
+/** POST /v1/auth/register */
+export type RegisterRequest = {
+  username: string;
+  email: string;
+  password: string;
+};
+
 /** 厂商配置表单字段（来自 marketplace 的 config_schema） */
 export type VendorConfigField = {
   key: string;

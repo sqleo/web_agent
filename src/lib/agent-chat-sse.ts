@@ -1,4 +1,4 @@
-/** POST /agent/chat/stream 返回的 SSE：每行 `data: ` 后为 JSON */
+/** POST /v1/agent/chat/stream 返回的 SSE：每行 `data: ` 后为 JSON */
 
 export type AgentStreamEvent =
   | { type: "start"; thread_id: string }

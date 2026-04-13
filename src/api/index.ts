@@ -1,4 +1,4 @@
-export { login } from "./auth";
+export { login, register } from "./auth";
 export {
   getAccessToken,
   getAuthUser,
@@ -67,6 +67,7 @@ export type {
   LoginData,
   LoginRequest,
   LoginUser,
+  RegisterRequest,
   PatchVendorConfigBody,
   Vendor,
   VendorConfigField,

@@ -1,0 +1,12 @@
+# 服务器：放好本文件 + .env_web（与后端 .env 区分）→ docker compose -f docker-compose.prod.yml pull && up -d
+# 镜像需先在本地/CI 构建并 push 到 TCR（见 scripts/docker-build-push.sh）
+# NEXT_PUBLIC_* 在构建时已写入前端 bundle，仅改 .env_web 不会更新浏览器里的 API 地址，需重新 build+push
+services:
+  web:
+    image: ${TCR_IMAGE:-ccr.ccs.tencentyun.com/sqliu/web_agent:latest}
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    env_file:
+      - path: .env_web
+        required: false
