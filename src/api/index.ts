@@ -22,14 +22,17 @@ export {
 export {
   createFolder,
   deleteFile,
+  DUPLICATE_UPLOAD_CONFLICT_CODE,
   getFolderTree,
   getFiles,
   parseFileMd,
+  reuploadFile,
   uploadFile,
   type CreateFolderBody,
   type GetFilesQuery,
   type GetFolderTreeQuery,
   type UploadFileBody,
+  type UploadFileResult,
 } from "./files";
 export {
   createKnowledgeBase,
@@ -44,6 +47,7 @@ export {
 export type {
   ApiEnvelope,
   CreateKnowledgeBaseBody,
+  DuplicateUploadConflictData,
   FileFolderTreeNode,
   FileItem,
   FileLifecycleStatus,

@@ -28,6 +28,7 @@ import {
   getFolderTree,
   getFiles,
   parseFileMd,
+  reuploadFile,
   uploadFile,
   type FileFolderTreeNode,
   type FileItem,
@@ -112,6 +113,7 @@ export default function FilesPage() {
   const [uploadList, setUploadList] = useState<UploadFile[]>([]);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [parsingId, setParsingId] = useState<number | null>(null);
+  const [reuploadingId, setReuploadingId] = useState<number | null>(null);
 
   const [createFolderForm] = Form.useForm<{
     name: string;
@@ -210,6 +212,27 @@ export default function FilesPage() {
     [items, loadFiles, messageApi]
   );
 
+  const handleReuploadFile = useCallback(
+    async (record: FileItem, file: File) => {
+      setReuploadingId(record.id);
+      try {
+        await reuploadFile(record.id, {
+          file,
+          folder_id: record.folder_id ?? undefined,
+          project_code: record.project_code ?? undefined,
+          source: record.source || "manual_upload",
+        });
+        messageApi.success("文件已更新");
+        await Promise.all([loadFiles(), loadFolders(query.project_code)]);
+      } catch (e) {
+        messageApi.error(e instanceof Error ? e.message : "更新失败");
+      } finally {
+        setReuploadingId(null);
+      }
+    },
+    [loadFiles, loadFolders, messageApi, query.project_code]
+  );
+
   const columns: ColumnsType<FileItem> = useMemo(
     () => [
       {
@@ -217,6 +240,24 @@ export default function FilesPage() {
         dataIndex: "file_name",
         key: "file_name",
         ellipsis: true,
+      },
+      {
+        title: "解析",
+        dataIndex: "parse_status",
+        key: "parse_status",
+        width: 96,
+        responsive: ["md"],
+        render: (v: FileItem["parse_status"]) => (
+          <Tag color={fileParseStatusTagColor(v)}>{fileParseStatusLabel(v)}</Tag>
+        ),
+      },
+      {
+        title: "内容版本",
+        dataIndex: "content_semver",
+        key: "content_semver",
+        width: 96,
+        responsive: ["sm"],
+        render: (v: string) => v || "—",
       },
       {
         title: "后缀",
@@ -251,24 +292,6 @@ export default function FilesPage() {
         render: (v: FileItem["status"]) => fileLifecycleLabel(v),
       },
       {
-        title: "解析",
-        dataIndex: "parse_status",
-        key: "parse_status",
-        width: 96,
-        responsive: ["md"],
-        render: (v: FileItem["parse_status"]) => (
-          <Tag color={fileParseStatusTagColor(v)}>{fileParseStatusLabel(v)}</Tag>
-        ),
-      },
-      {
-        title: "内容版本",
-        dataIndex: "content_semver",
-        key: "content_semver",
-        width: 96,
-        responsive: ["sm"],
-        render: (v: string) => v || "—",
-      },
-      {
         title: "创建人",
         key: "creator",
         width: 110,
@@ -287,7 +310,7 @@ export default function FilesPage() {
       {
         title: "操作",
         key: "actions",
-        width: 148,
+        width: 236,
         fixed: "right",
         render: (_: unknown, record: FileItem) => {
           const canParse = record.parse_status !== "parsed";
@@ -312,6 +335,23 @@ export default function FilesPage() {
                 <span className="inline-flex">{parseBtn}</span>
               </Tooltip>
             )}
+            <Upload
+              showUploadList={false}
+              beforeUpload={(file) => {
+                void handleReuploadFile(record, file);
+                return false;
+              }}
+            >
+              <Button
+                type="link"
+                size="small"
+                className="!px-0"
+                loading={reuploadingId === record.id}
+                disabled={deletingId === record.id || parsingId === record.id}
+              >
+                更新文件
+              </Button>
+            </Upload>
             <Popconfirm
               title="确认删除该文件？"
               description="软删除后列表中将不再显示。"
@@ -335,7 +375,7 @@ export default function FilesPage() {
         },
       },
     ],
-    [deletingId, handleDeleteFile, handleParseFile, parsingId]
+    [deletingId, handleDeleteFile, handleParseFile, handleReuploadFile, parsingId, reuploadingId]
   );
 
   const handleCreateFolder = async () => {
@@ -369,13 +409,15 @@ export default function FilesPage() {
         return;
       }
       setUploading(true);
-      await uploadFile({
+      const { didAutoReupload } = await uploadFile({
         file: uploadList[0].originFileObj,
         folder_id: values.folder_id,
         project_code: values.project_code,
         source: values.source || "manual_upload",
       });
-      messageApi.success("文件上传成功");
+      messageApi.success(
+        didAutoReupload ? "同名文件内容已变更，已自动覆盖更新" : "文件上传成功"
+      );
       setUploadModalOpen(false);
       setUploadList([]);
       uploadForm.resetFields();

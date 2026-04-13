@@ -2,12 +2,16 @@ import { HTTPError } from "@/https";
 import { authApi } from "./client";
 import type {
   ApiEnvelope,
+  DuplicateUploadConflictData,
   FileFolderTreeNode,
   FileItem,
   FileListData,
   FileLifecycleStatus,
   ParseFileMdResult,
 } from "./types";
+
+/** POST /files/upload 同名冲突：与全局 FailResponse 一致，HTTP 409 + code 40901 */
+export const DUPLICATE_UPLOAD_CONFLICT_CODE = 40901;
 
 export type GetFilesQuery = {
   page?: number;
@@ -32,6 +36,12 @@ export type UploadFileBody = {
   folder_id?: number;
   project_code?: string;
   source?: string;
+};
+
+export type UploadFileResult = {
+  item: FileItem | null;
+  /** 因 40901 且返回 file_id 后已自动调用 PUT 重传成功 */
+  didAutoReupload?: boolean;
 };
 
 function pickDefined<T extends Record<string, unknown>>(obj: T): Record<string, string> {
@@ -138,7 +148,7 @@ export async function getFolderTree(query: GetFolderTreeQuery = {}): Promise<Fil
   return normalizeTreeData(envelope.data);
 }
 
-export async function uploadFile(body: UploadFileBody): Promise<FileItem | null> {
+function buildUploadFormData(body: UploadFileBody): FormData {
   const formData = new FormData();
   formData.append("file", body.file);
   if (body.folder_id !== undefined) {
@@ -148,6 +158,32 @@ export async function uploadFile(body: UploadFileBody): Promise<FileItem | null>
     formData.append("project_code", body.project_code);
   }
   formData.append("source", body.source || "manual_upload");
+  return formData;
+}
+
+/**
+ * PUT /files/{file_id}/reupload — 覆盖已有文件内容（需登录）
+ */
+export async function reuploadFile(fileId: number, body: UploadFileBody): Promise<FileItem | null> {
+  const formData = buildUploadFormData(body);
+  let envelope: ApiEnvelope<FileItem | null>;
+  try {
+    envelope = await authApi.put<ApiEnvelope<FileItem | null>>(
+      `files/${encodeURIComponent(String(fileId))}/reupload`,
+      { body: formData }
+    );
+  } catch (e) {
+    throw new Error(await toReadableMessage(e));
+  }
+
+  if (envelope.code !== 0) {
+    throw new Error(envelope.message || "更新文件失败");
+  }
+  return envelope.data ?? null;
+}
+
+export async function uploadFile(body: UploadFileBody): Promise<UploadFileResult> {
+  const formData = buildUploadFormData(body);
 
   let envelope: ApiEnvelope<FileItem | null>;
   try {
@@ -155,13 +191,40 @@ export async function uploadFile(body: UploadFileBody): Promise<FileItem | null>
       body: formData,
     });
   } catch (e) {
+    if (e instanceof HTTPError && e.response.status === 409) {
+      let fail: ApiEnvelope<DuplicateUploadConflictData | null>;
+      try {
+        fail = (await e.response.json()) as ApiEnvelope<DuplicateUploadConflictData | null>;
+      } catch {
+        throw new Error(await toReadableMessage(e));
+      }
+      if (fail.code === DUPLICATE_UPLOAD_CONFLICT_CODE) {
+        const fid =
+          fail.data && typeof fail.data === "object" && "file_id" in fail.data
+            ? (fail.data as DuplicateUploadConflictData).file_id
+            : undefined;
+        if (typeof fid === "number") {
+          const item = await reuploadFile(fid, body);
+          return { item, didAutoReupload: true };
+        }
+        throw new Error(fail.message || "上传失败");
+      }
+    }
     throw new Error(await toReadableMessage(e));
   }
 
   if (envelope.code !== 0) {
+    if (envelope.code === DUPLICATE_UPLOAD_CONFLICT_CODE) {
+      const raw = envelope.data as DuplicateUploadConflictData | null | undefined;
+      if (raw && typeof raw.file_id === "number") {
+        const item = await reuploadFile(raw.file_id, body);
+        return { item, didAutoReupload: true };
+      }
+      throw new Error(envelope.message || "上传失败");
+    }
     throw new Error(envelope.message || "上传文件失败");
   }
-  return envelope.data ?? null;
+  return { item: envelope.data ?? null };
 }
 
 /** POST /files/{file_id}/parse-md（需登录）。非 Markdown：415；源文件不在磁盘：422 */

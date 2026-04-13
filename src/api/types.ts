@@ -153,6 +153,11 @@ export type FileListData = {
   items: FileUploadItem[];
 };
 
+/** POST /files/upload 同名冲突时（HTTP 409，code 40901）data 可能携带已有文件 id，供重传 */
+export type DuplicateUploadConflictData = {
+  file_id: number;
+};
+
 /** POST /files/{file_id}/parse-md 成功响应 */
 export type ParseFileMdResult = {
   content_semver?: string;

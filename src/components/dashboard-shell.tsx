@@ -3,6 +3,7 @@
 import {
   ApiOutlined,
   BarChartOutlined,
+  CustomerServiceOutlined,
   DatabaseOutlined,
   FolderOpenOutlined,
   MessageOutlined,
@@ -25,10 +26,19 @@ const ROUTE_TITLES: Record<string, string> = {
   "/ai-tool": "AI tool",
   "/vendors": "厂商管理",
   "/chat": "聊天",
+  "/customer-service": "智能客服",
   "/settings": "账户设置",
 };
 
-const MENU_KEYS = ["/", "/knowledge", "/files", "/ai-tool", "/vendors", "/chat"] as const;
+const MENU_KEYS = [
+  "/",
+  "/knowledge",
+  "/files",
+  "/ai-tool",
+  "/chat",
+  "/customer-service",
+  "/vendors",
+] as const;
 
 function normalizePath(path: string): string {
   if (path === "/") {
@@ -136,6 +146,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   key: "/chat",
                   icon: <MessageOutlined />,
                   label: "聊天",
+                },
+                {
+                  key: "/customer-service",
+                  icon: <CustomerServiceOutlined />,
+                  label: "智能客服",
                 },
                 {
                   key: "/vendors",

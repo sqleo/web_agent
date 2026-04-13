@@ -21,7 +21,14 @@ import xZhCN from "@ant-design/x/locale/zh_CN";
 import { App, Button, Flex, Input, Modal, Radio, Select, Space, Spin, theme, Typography } from "antd";
 import type { MenuProps } from "antd";
 import type { ConversationItemType } from "@ant-design/x/es/conversations/interface";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   type ChatCheckpointItem,
   deleteAgentChatThread,
@@ -30,12 +37,16 @@ import {
   resumeAgentChat,
   travelAgentChat,
 } from "@/api/agent-chat";
+import { getKnowledgeBases } from "@/api/knowledge-bases";
 import { getAuthorizationHeaderValue } from "@/api/auth-storage";
 import { iterateAgentSseEvents } from "@/lib/agent-chat-sse";
-import { getAgentChatStreamUrl } from "@/lib/agent-chat-url";
+import { getAgentChatStreamUrl, getCustomerServiceChatStreamUrl } from "@/lib/agent-chat-url";
 import { toBubbleItems, type StoredBubble } from "./message-serialize";
 
-const STORAGE_KEY = "web_agent_chat_sessions_v2";
+export const DEFAULT_CHAT_STORAGE_KEY = "web_agent_chat_sessions_v2";
+
+/** 智能客服入口专用，与「聊天」页会话列表隔离 */
+export const CUSTOMER_SERVICE_CHAT_STORAGE_KEY = "web_agent_customer_service_chat_sessions_v2";
 
 type ChatSession = {
   id: string;
@@ -58,12 +69,12 @@ function uid(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function loadStore(): Store {
+function loadStore(storageKey: string): Store {
   if (typeof window === "undefined") {
     return { sessions: [], activeId: null };
   }
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) {
       return { sessions: [], activeId: null };
     }
@@ -77,16 +88,18 @@ function loadStore(): Store {
   }
 }
 
-function saveStore(store: Store) {
+function saveStore(storageKey: string, store: Store) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    localStorage.setItem(storageKey, JSON.stringify(store));
   } catch {
     /* ignore */
   }
 }
 
-function emptySession(): ChatSession {
+function emptySession(welcomeText?: string): ChatSession {
   const id = uid();
+  const defaultWelcome =
+    "你好，我是助手。左侧可管理历史会话，下方可上传附件。发送消息后通过流式接口生成回复（支持思考过程与正文分段展示）。";
   return {
     id,
     title: "新对话",
@@ -94,24 +107,47 @@ function emptySession(): ChatSession {
       {
         key: "welcome",
         role: "ai",
-        text: "你好，我是助手。左侧可管理历史会话，下方可上传附件。发送消息后通过流式接口生成回复（支持思考过程与正文分段展示）。",
+        text: welcomeText ?? defaultWelcome,
       },
     ],
     updatedAt: Date.now(),
   };
 }
 
-export function ChatPanel() {
+export type ChatPanelProps = {
+  /** 与「聊天」页隔离会话列表时使用不同 key */
+  storageKey?: string;
+  /** 新会话首条助手欢迎语 */
+  welcomeText?: string;
+  /**
+   * `customer-service`：POST `/agent/customer-service/chat/stream`，并展示知识库范围选择（默认全部）。
+   */
+  variant?: "default" | "customer-service";
+};
+
+export function ChatPanel({
+  storageKey = DEFAULT_CHAT_STORAGE_KEY,
+  welcomeText,
+  variant = "default",
+}: ChatPanelProps) {
   return (
     <XProvider locale={xZhCN}>
       <App style={{ background: "transparent" }}>
-        <ChatPanelInner />
+        <ChatPanelInner storageKey={storageKey} welcomeText={welcomeText} variant={variant} />
       </App>
     </XProvider>
   );
 }
 
-function ChatPanelInner() {
+function ChatPanelInner({
+  storageKey,
+  welcomeText,
+  variant,
+}: {
+  storageKey: string;
+  welcomeText?: string;
+  variant: "default" | "customer-service";
+}) {
   const { token } = theme.useToken();
   const { message: messageApi } = App.useApp();
   const listRef = useRef<BubbleListRef>(null);
@@ -138,30 +174,84 @@ function ChatPanelInner() {
   const [travelMode, setTravelMode] = useState<"fork" | "replay">("fork");
   const [travelForkInput, setTravelForkInput] = useState("");
 
+  const [kbOptions, setKbOptions] = useState<{ value: number; label: string }[]>([]);
+  const [kbLoading, setKbLoading] = useState(false);
+  const [selectedKbId, setSelectedKbId] = useState<number | "all">("all");
+
+  const streamUrl = useMemo(
+    () =>
+      variant === "customer-service"
+        ? getCustomerServiceChatStreamUrl()
+        : getAgentChatStreamUrl(),
+    [variant]
+  );
+
+  const buildAgentChatBody = useCallback(
+    (message: string, threadId: string | null) => {
+      const body: Record<string, unknown> = {
+        message,
+        thread_id: threadId,
+      };
+      if (variant === "customer-service" && selectedKbId !== "all") {
+        body.knowledge_base_id = selectedKbId;
+      }
+      return JSON.stringify(body);
+    },
+    [variant, selectedKbId]
+  );
+
+  useEffect(() => {
+    if (variant !== "customer-service") {
+      return;
+    }
+    let cancelled = false;
+    setKbLoading(true);
+    void (async () => {
+      try {
+        const data = await getKnowledgeBases({ page: 1, page_size: 200 });
+        if (cancelled) {
+          return;
+        }
+        setKbOptions(data.items.map((k) => ({ value: k.id, label: k.name })));
+      } catch {
+        if (!cancelled) {
+          setKbOptions([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setKbLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [variant]);
+
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
 
   useEffect(() => {
     setMounted(true);
-    const s = loadStore();
+    const s = loadStore(storageKey);
     if (s.sessions.length === 0) {
-      const first = emptySession();
+      const first = emptySession(welcomeText);
       const next = { sessions: [first], activeId: first.id };
       setSessions(next.sessions);
       setActiveId(next.activeId);
-      saveStore(next);
+      saveStore(storageKey, next);
     } else {
       setSessions(s.sessions);
       setActiveId(s.activeId ?? s.sessions[0]?.id ?? null);
     }
-  }, []);
+  }, [storageKey, welcomeText]);
 
   const persist = useCallback((nextSessions: ChatSession[], nextActive: string | null) => {
     setSessions(nextSessions);
     setActiveId(nextActive);
-    saveStore({ sessions: nextSessions, activeId: nextActive });
-  }, []);
+    saveStore(storageKey, { sessions: nextSessions, activeId: nextActive });
+  }, [storageKey]);
 
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeId) ?? null,
@@ -204,17 +294,17 @@ function ChatPanelInner() {
   }, [bubbleItems, scrollBottom]);
 
   const handleNewChat = useCallback(() => {
-    const session = emptySession();
+    const session = emptySession(welcomeText);
     persist([session, ...sessions], session.id);
-  }, [sessions, persist]);
+  }, [sessions, persist, welcomeText]);
 
   const handleActiveChange = useCallback(
     (key: string | number) => {
       const id = String(key);
       setActiveId(id);
-      saveStore({ sessions, activeId: id });
+      saveStore(storageKey, { sessions, activeId: id });
     },
-    [sessions]
+    [sessions, storageKey]
   );
 
   const removeSession = useCallback(
@@ -241,7 +331,7 @@ function ChatPanelInner() {
 
       const next = sessions.filter((s) => s.id !== id);
       if (next.length === 0) {
-        const fresh = emptySession();
+        const fresh = emptySession(welcomeText);
         persist([fresh], fresh.id);
         return;
       }
@@ -251,7 +341,7 @@ function ChatPanelInner() {
       }
       persist(next, nextActive);
     },
-    [sessions, activeId, persist, messageApi]
+    [sessions, activeId, persist, messageApi, welcomeText]
   );
 
   const getMenu = useCallback(
@@ -297,7 +387,7 @@ function ChatPanelInner() {
               updatedAt: Date.now(),
             };
           });
-          saveStore({ sessions: next, activeId: activeIdRef.current });
+          saveStore(storageKey, { sessions: next, activeId: activeIdRef.current });
           return next;
         });
       };
@@ -308,7 +398,7 @@ function ChatPanelInner() {
             const next = prev.map((s) =>
               s.id === sessionId ? { ...s, threadId: ev.thread_id } : s
             );
-            saveStore({ sessions: next, activeId: activeIdRef.current });
+            saveStore(storageKey, { sessions: next, activeId: activeIdRef.current });
             return next;
           });
           continue;
@@ -360,7 +450,7 @@ function ChatPanelInner() {
             const next = prev.map((s) =>
               s.id === sessionId ? { ...s, threadId: ev.thread_id } : s
             );
-            saveStore({ sessions: next, activeId: activeIdRef.current });
+            saveStore(storageKey, { sessions: next, activeId: activeIdRef.current });
             return next;
           });
         }
@@ -375,7 +465,7 @@ function ChatPanelInner() {
         }));
       }
     },
-    [messageApi]
+    [messageApi, storageKey]
   );
 
   const handlePauseGeneration = useCallback(async () => {
@@ -432,7 +522,6 @@ function ChatPanelInner() {
       Accept: "text/event-stream",
       Authorization: authHeader,
     };
-    const streamUrl = getAgentChatStreamUrl();
 
     try {
       await resumeAgentChat(tid, {
@@ -446,10 +535,7 @@ function ChatPanelInner() {
     }
 
     /** 恢复后拉流：需与后端约定空 message 表示续写；若不符请改为专用字段 */
-    const body = JSON.stringify({
-      thread_id: tid,
-      message: "",
-    });
+    const body = buildAgentChatBody("", tid);
 
     try {
       const res = await fetch(streamUrl, {
@@ -485,7 +571,7 @@ function ChatPanelInner() {
         setPausedSessionId(null);
       }
     }
-  }, [activeSession, consumeAgentSseLoop, messageApi, pausedSessionId]);
+  }, [activeSession, buildAgentChatBody, consumeAgentSseLoop, messageApi, pausedSessionId, streamUrl]);
 
   useEffect(() => {
     if (!travelOpen || !activeSession?.threadId) {
@@ -539,7 +625,7 @@ function ChatPanelInner() {
         const next = prev.map((s) =>
           s.id === sessionId ? { ...s, threadId: newTid } : s
         );
-        saveStore({ sessions: next, activeId: activeIdRef.current });
+        saveStore(storageKey, { sessions: next, activeId: activeIdRef.current });
         return next;
       });
       setTravelOpen(false);
@@ -553,6 +639,7 @@ function ChatPanelInner() {
     activeSession?.id,
     activeSession?.threadId,
     messageApi,
+    storageKey,
     travelCheckpointId,
     travelForkInput,
     travelMode,
@@ -638,7 +725,7 @@ function ChatPanelInner() {
             messages: [...s.messages, userMsg, assistantMsg],
           };
         });
-        saveStore({ sessions: next, activeId: activeIdRef.current });
+        saveStore(storageKey, { sessions: next, activeId: activeIdRef.current });
         return next;
       });
 
@@ -654,11 +741,7 @@ function ChatPanelInner() {
         Authorization: authHeader,
       };
 
-      const streamUrl = getAgentChatStreamUrl();
-      const body = JSON.stringify({
-        message: userLine,
-        thread_id: threadIdForApi,
-      });
+      const body = buildAgentChatBody(userLine, threadIdForApi);
 
       try {
         const res = await fetch(streamUrl, {
@@ -687,7 +770,7 @@ function ChatPanelInner() {
                 updatedAt: Date.now(),
               };
             });
-            saveStore({ sessions: next, activeId: activeIdRef.current });
+            saveStore(storageKey, { sessions: next, activeId: activeIdRef.current });
             return next;
           });
           return;
@@ -714,7 +797,7 @@ function ChatPanelInner() {
               updatedAt: Date.now(),
             };
           });
-          saveStore({ sessions: next, activeId: activeIdRef.current });
+          saveStore(storageKey, { sessions: next, activeId: activeIdRef.current });
           return next;
         });
       } finally {
@@ -727,7 +810,7 @@ function ChatPanelInner() {
         }
       }
     },
-    [activeSession, consumeAgentSseLoop, files, messageApi]
+    [activeSession, buildAgentChatBody, consumeAgentSseLoop, files, messageApi, storageKey, streamUrl]
   );
 
   if (!mounted || !activeSession) {
@@ -830,6 +913,20 @@ function ChatPanelInner() {
           }}
         >
           <Space wrap size={8} style={{ marginBottom: 10 }}>
+            {variant === "customer-service" ? (
+              <Select<number | "all">
+                size="small"
+                loading={kbLoading}
+                style={{ minWidth: 168 }}
+                aria-label="检索知识库范围"
+                value={selectedKbId}
+                onChange={(v) => setSelectedKbId(v)}
+                options={[
+                  { value: "all", label: "全部知识库" },
+                  ...kbOptions.map((o) => ({ value: o.value, label: o.label })),
+                ]}
+              />
+            ) : null}
             <Button
               size="small"
               icon={<BranchesOutlined />}

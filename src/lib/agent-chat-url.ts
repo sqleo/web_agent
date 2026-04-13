@@ -17,3 +17,17 @@ export function getAgentChatStreamUrl(): string {
   }
   return "/agent/chat/stream";
 }
+
+/**
+ * 智能客服：`NEXT_PUBLIC_API_BASE_URL/agent/customer-service/chat/stream`
+ */
+export function getCustomerServiceChatStreamUrl(): string {
+  const fromEnv = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
+  if (fromEnv) {
+    return `${fromEnv}/agent/customer-service/chat/stream`;
+  }
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/agent/customer-service/chat/stream`;
+  }
+  return "/agent/customer-service/chat/stream";
+}
