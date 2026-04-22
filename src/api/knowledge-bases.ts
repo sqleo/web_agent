@@ -156,22 +156,28 @@ export async function removeKnowledgeBaseFiles(
   };
 }
 
-/** POST /knowledge-bases/{kb_id}/files/index — 202 Accepted，入队入库 */
-export async function indexKnowledgeBaseFiles(
-  kbId: number,
-  body: KnowledgeBaseFileOperateRequest
-): Promise<void> {
+/** POST /knowledge-bases/{kb_id}/files/{file_id}/index — 202 Accepted，入队入库 */
+export async function indexKnowledgeBaseFile(kbId: number, fileId: number): Promise<void> {
   let envelope: ApiEnvelope<unknown>;
   try {
     envelope = await authApi.post<ApiEnvelope<unknown>>(
-      `knowledge-bases/${encodeURIComponent(String(kbId))}/files/index`,
-      { json: body }
+      `knowledge-bases/${encodeURIComponent(String(kbId))}/files/${encodeURIComponent(String(fileId))}/index`
     );
   } catch (e) {
     throw new Error(await toReadableMessage(e));
   }
   if (envelope.code !== 0) {
     throw new Error(envelope.message || "入库失败");
+  }
+}
+
+/** 对多个 file_id 依次请求单文件入库接口 */
+export async function indexKnowledgeBaseFiles(
+  kbId: number,
+  body: KnowledgeBaseFileOperateRequest
+): Promise<void> {
+  for (const fileId of body.file_ids) {
+    await indexKnowledgeBaseFile(kbId, fileId);
   }
 }
 

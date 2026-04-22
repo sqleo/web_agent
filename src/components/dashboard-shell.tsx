@@ -2,13 +2,17 @@
 
 import {
   ApiOutlined,
+  AuditOutlined,
   BarChartOutlined,
   CustomerServiceOutlined,
   DatabaseOutlined,
+  FileSearchOutlined,
   FolderOpenOutlined,
   MessageOutlined,
+  NodeIndexOutlined,
   RocketOutlined,
   SearchOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import { Breadcrumb, Input, Layout, Menu, theme as antdTheme } from "antd";
 import Link from "next/link";
@@ -22,21 +26,29 @@ const { Header, Sider, Content } = Layout;
 const ROUTE_TITLES: Record<string, string> = {
   "/": "首页",
   "/knowledge": "知识库",
+  "/knowledge-config": "知识库配置",
   "/files": "文件管理",
   "/ai-tool": "AI tool",
   "/vendors": "厂商管理",
   "/chat": "聊天",
   "/customer-service": "智能客服",
+  "/graph-service": "智能 Graph",
+  "/report-agent": "智能调研报告",
+  "/entity-candidates": "候选实体审核",
   "/settings": "账户设置",
 };
 
 const MENU_KEYS = [
   "/",
   "/knowledge",
+  "/knowledge-config",
   "/files",
   "/ai-tool",
   "/chat",
   "/customer-service",
+  "/graph-service",
+  "/report-agent",
+  "/entity-candidates",
   "/vendors",
 ] as const;
 
@@ -133,6 +145,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   label: "知识库",
                 },
                 {
+                  key: "/knowledge-config",
+                  icon: <SettingOutlined />,
+                  label: "知识库配置",
+                },
+                {
                   key: "/files",
                   icon: <FolderOpenOutlined />,
                   label: "文件管理",
@@ -151,6 +168,21 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   key: "/customer-service",
                   icon: <CustomerServiceOutlined />,
                   label: "智能客服",
+                },
+                {
+                  key: "/graph-service",
+                  icon: <NodeIndexOutlined />,
+                  label: "智能 Graph",
+                },
+                {
+                  key: "/report-agent",
+                  icon: <FileSearchOutlined />,
+                  label: "智能调研报告",
+                },
+                {
+                  key: "/entity-candidates",
+                  icon: <AuditOutlined />,
+                  label: "候选实体审核",
                 },
                 {
                   key: "/vendors",

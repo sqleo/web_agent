@@ -24,16 +24,24 @@ async function toReadableMessage(error: unknown): Promise<string> {
   return "请求失败，请稍后重试";
 }
 
+export type DeleteAgentChatThreadVariant = "default" | "customer-service" | "graph-service";
+
 /**
  * 删除 LangGraph 对话线程。
- * DELETE /agent/chat/{thread_id}
+ * - `graph-service`：DELETE `/v1/agent/graph-service/chat/{thread_id}`
  */
-export async function deleteAgentChatThread(threadId: string): Promise<DeleteChatThreadData> {
+export async function deleteAgentChatThread(
+  threadId: string,
+  variant: DeleteAgentChatThreadVariant = "default"
+): Promise<DeleteChatThreadData> {
+  const path =
+    variant === "graph-service"
+      ? `agent/graph-service/chat/${encodeURIComponent(threadId)}`
+      : `agent/chat/${encodeURIComponent(threadId)}`;
+
   let envelope: ApiEnvelope<DeleteChatThreadData>;
   try {
-    envelope = await authApi.del<ApiEnvelope<DeleteChatThreadData>>(
-      `agent/chat/${encodeURIComponent(threadId)}`
-    );
+    envelope = await authApi.del<ApiEnvelope<DeleteChatThreadData>>(path);
   } catch (e) {
     throw new Error(await toReadableMessage(e));
   }

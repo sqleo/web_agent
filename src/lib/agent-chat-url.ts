@@ -23,3 +23,25 @@ export function getCustomerServiceChatStreamUrl(): string {
   }
   return `/${API_VERSION}/agent/customer-service/chat/stream`;
 }
+
+/**
+ * 智能 Graph：`{base}/v1/agent/graph-service/chat/stream`（SSE 与智能客服流式同构；stream_modes / stream_subgraphs 由后端与环境变量共用）
+ */
+export function getGraphServiceChatStreamUrl(): string {
+  const base = getApiVersionedBase();
+  if (base) {
+    return `${base}/agent/graph-service/chat/stream`;
+  }
+  return `/${API_VERSION}/agent/graph-service/chat/stream`;
+}
+
+/**
+ * 报告生成（全流式 SSE）：`POST {base}/v1/report/generate`
+ */
+export function getReportGenerateUrl(): string {
+  const base = getApiVersionedBase();
+  if (base) {
+    return `${base}/report/generate`;
+  }
+  return `/${API_VERSION}/report/generate`;
+}

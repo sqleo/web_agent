@@ -40,13 +40,20 @@ import {
 import { getKnowledgeBases } from "@/api/knowledge-bases";
 import { getAuthorizationHeaderValue } from "@/api/auth-storage";
 import { iterateAgentSseEvents } from "@/lib/agent-chat-sse";
-import { getAgentChatStreamUrl, getCustomerServiceChatStreamUrl } from "@/lib/agent-chat-url";
+import {
+  getAgentChatStreamUrl,
+  getCustomerServiceChatStreamUrl,
+  getGraphServiceChatStreamUrl,
+} from "@/lib/agent-chat-url";
 import { toBubbleItems, type StoredBubble } from "./message-serialize";
 
 export const DEFAULT_CHAT_STORAGE_KEY = "web_agent_chat_sessions_v2";
 
 /** 智能客服入口专用，与「聊天」页会话列表隔离 */
 export const CUSTOMER_SERVICE_CHAT_STORAGE_KEY = "web_agent_customer_service_chat_sessions_v2";
+
+/** 智能 Graph 入口专用会话隔离 */
+export const GRAPH_SERVICE_CHAT_STORAGE_KEY = "web_agent_graph_service_chat_sessions_v2";
 
 type ChatSession = {
   id: string;
@@ -121,8 +128,9 @@ export type ChatPanelProps = {
   welcomeText?: string;
   /**
    * `customer-service`：POST `/agent/customer-service/chat/stream`，并展示知识库范围选择（默认全部）。
+   * `graph-service`：POST `/agent/graph-service/chat/stream`，请求体仅 `message` / `thread_id`（与路由工具开关无关）。
    */
-  variant?: "default" | "customer-service";
+  variant?: "default" | "customer-service" | "graph-service";
 };
 
 export function ChatPanel({
@@ -146,7 +154,7 @@ function ChatPanelInner({
 }: {
   storageKey: string;
   welcomeText?: string;
-  variant: "default" | "customer-service";
+  variant: "default" | "customer-service" | "graph-service";
 }) {
   const { token } = theme.useToken();
   const { message: messageApi } = App.useApp();
@@ -178,13 +186,15 @@ function ChatPanelInner({
   const [kbLoading, setKbLoading] = useState(false);
   const [selectedKbId, setSelectedKbId] = useState<number | "all">("all");
 
-  const streamUrl = useMemo(
-    () =>
-      variant === "customer-service"
-        ? getCustomerServiceChatStreamUrl()
-        : getAgentChatStreamUrl(),
-    [variant]
-  );
+  const streamUrl = useMemo(() => {
+    if (variant === "customer-service") {
+      return getCustomerServiceChatStreamUrl();
+    }
+    if (variant === "graph-service") {
+      return getGraphServiceChatStreamUrl();
+    }
+    return getAgentChatStreamUrl();
+  }, [variant]);
 
   const buildAgentChatBody = useCallback(
     (message: string, threadId: string | null) => {
@@ -321,7 +331,7 @@ function ChatPanelInner({
           return;
         }
         try {
-          const data = await deleteAgentChatThread(tid);
+          const data = await deleteAgentChatThread(tid, variant);
           messageApi.success(data.message || "删除成功");
         } catch (e) {
           messageApi.error(e instanceof Error ? e.message : "删除对话失败");
@@ -341,7 +351,7 @@ function ChatPanelInner({
       }
       persist(next, nextActive);
     },
-    [sessions, activeId, persist, messageApi, welcomeText]
+    [sessions, activeId, persist, messageApi, welcomeText, variant]
   );
 
   const getMenu = useCallback(

@@ -202,7 +202,7 @@ export type KnowledgeBaseBatchFilesBody = {
   file_ids: number[];
 };
 
-/** POST /knowledge-bases/{kb_id}/files/index 等批量文件操作请求体 */
+/** 客户端对多个 file_id 依次调用 POST .../files/{file_id}/index 时的入参 */
 export type KnowledgeBaseFileOperateRequest = KnowledgeBaseBatchFilesBody;
 
 export type KnowledgeBaseBatchFilesResult = {
@@ -224,4 +224,126 @@ export type KnowledgeBaseListData = {
   total: number;
   page: number;
   page_size: number;
+};
+
+/** GET/POST /metadata-fields — LlamaRAG 入库前 metadata 抽取字段 */
+export type MetadataValueType = "text" | "number" | "list" | "date";
+export type MetadataExtractMode = "field" | "section";
+export type MetadataMatchMode = "exact" | "contains" | "regex";
+
+export type MetadataFieldAlias = {
+  id: number;
+  field_id: number;
+  alias_text: string;
+  match_mode: MetadataMatchMode;
+  status: number;
+  priority: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type MetadataField = {
+  id: number;
+  owner_user_id?: number;
+  biz_code?: string | null;
+  knowledge_base_id?: number | null;
+  field_key: string;
+  field_name: string;
+  value_type: MetadataValueType;
+  extract_mode: MetadataExtractMode;
+  status: number;
+  priority: number;
+  created_at?: string;
+  updated_at?: string;
+  aliases: MetadataFieldAlias[];
+};
+
+export type MetadataFieldsListData = {
+  total: number;
+  items: MetadataField[];
+};
+
+export type CreateMetadataFieldAliasBody = {
+  alias_text: string;
+  match_mode: MetadataMatchMode;
+  status: number;
+  priority: number;
+};
+
+export type CreateMetadataFieldBody = {
+  biz_code?: string;
+  knowledge_base_id?: number;
+  field_key: string;
+  field_name: string;
+  value_type: MetadataValueType;
+  extract_mode: MetadataExtractMode;
+  status: number;
+  priority: number;
+  aliases?: CreateMetadataFieldAliasBody[];
+};
+
+export type PatchMetadataFieldBody = {
+  field_name?: string;
+  priority?: number;
+  status?: number;
+};
+
+export type PatchMetadataFieldAliasBody = {
+  alias_text?: string;
+  match_mode?: MetadataMatchMode;
+  status?: number;
+  priority?: number;
+};
+
+/** GET /entity-candidates — 候选实体审核 */
+export type EntityCandidateStatus = "pending" | "approved" | "rejected" | "merged";
+
+export type EntityCandidate = {
+  id: number;
+  candidate_text: string;
+  entity_type: string;
+  frequency?: number;
+  confidence?: number;
+  biz_code?: string | null;
+  knowledge_base_id?: number | null;
+  file_id?: number | null;
+  status: EntityCandidateStatus;
+  updated_at: string;
+  /** 证据片段等，结构以后端为准 */
+  evidence?: unknown;
+  review_comment?: string | null;
+  reviewer?: string | null;
+  reviewer_user_id?: number | null;
+  approved_entity_id?: number | null;
+};
+
+export type EntityCandidateListData = {
+  items: EntityCandidate[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+export type ApproveEntityCandidateBody = {
+  canonical_name: string;
+  entity_type: string;
+  aliases: string[];
+  review_comment?: string;
+};
+
+export type RejectEntityCandidateBody = {
+  review_comment: string;
+};
+
+export type MergeEntityCandidateBody = {
+  target_entity_id: number;
+  review_comment?: string;
+};
+
+/** GET target-entities 下拉项（字段以后端为准） */
+export type TargetEntityOption = {
+  id: number;
+  canonical_name?: string | null;
+  name?: string | null;
+  entity_type?: string | null;
 };
