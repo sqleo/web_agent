@@ -34,14 +34,3 @@ export function getGraphServiceChatStreamUrl(): string {
   }
   return `/${API_VERSION}/agent/graph-service/chat/stream`;
 }
-
-/**
- * 报告生成（全流式 SSE）：`POST {base}/v1/report/generate`
- */
-export function getReportGenerateUrl(): string {
-  const base = getApiVersionedBase();
-  if (base) {
-    return `${base}/report/generate`;
-  }
-  return `/${API_VERSION}/report/generate`;
-}

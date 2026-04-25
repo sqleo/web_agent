@@ -33,7 +33,6 @@ const ROUTE_TITLES: Record<string, string> = {
   "/chat": "聊天",
   "/customer-service": "智能客服",
   "/graph-service": "智能 Graph",
-  "/report-agent": "智能调研报告",
   "/entity-candidates": "候选实体审核",
   "/settings": "账户设置",
 };
@@ -47,7 +46,6 @@ const MENU_KEYS = [
   "/chat",
   "/customer-service",
   "/graph-service",
-  "/report-agent",
   "/entity-candidates",
   "/vendors",
 ] as const;
@@ -102,7 +100,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         collapsedWidth={72}
         theme={sidebarIsDark ? "dark" : "light"}
         style={{
-          background: sidebarIsDark ? "#111318" : token.colorBgContainer,
+          background: sidebarIsDark ? "#162032" : token.colorBgContainer,
           borderRight: `1px solid ${token.colorBorderSecondary}`,
           minHeight: "100dvh",
           height: "100dvh",
@@ -122,7 +120,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               className="rounded-lg"
               style={
                 sidebarIsDark
-                  ? { background: "rgba(255,255,255,0.06)", border: "none" }
+                  ? { background: "rgba(148,163,184,0.12)", border: "none" }
                   : { background: token.colorFillSecondary, border: "none" }
               }
             />
@@ -173,11 +171,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   key: "/graph-service",
                   icon: <NodeIndexOutlined />,
                   label: "智能 Graph",
-                },
-                {
-                  key: "/report-agent",
-                  icon: <FileSearchOutlined />,
-                  label: "智能调研报告",
                 },
                 {
                   key: "/entity-candidates",

@@ -4,6 +4,11 @@
 :root {
   --background: #f5f5f5;
   --foreground: rgba(0, 0, 0, 0.88);
+  --geek-surface: #0f172a;
+  --geek-elevate: #1e293b;
+  --geek-sidebar: #162032;
+  --geek-accent-blue: #3b82f6;
+  --geek-accent-purple: #8b5cf6;
 }
 
 @theme inline {
@@ -33,4 +38,28 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+html[data-theme="dark"] .dashboard-sider {
+  background: var(--geek-sidebar) !important;
+}
+
+html[data-theme="dark"] .dashboard-sider .ant-menu-dark {
+  background: transparent !important;
+}
+
+html[data-theme="dark"] .dashboard-sider .ant-menu-dark .ant-menu-item-selected {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--geek-accent-blue) 28%, transparent),
+    color-mix(in srgb, var(--geek-accent-purple) 32%, transparent)
+  ) !important;
+}
+
+html[data-theme="dark"] .dashboard-sider .ant-menu-dark .ant-menu-item-active:not(.ant-menu-item-selected) {
+  background: rgba(59, 130, 246, 0.16) !important;
+}
+
+.geek-accent-gradient {
+  background: linear-gradient(135deg, var(--geek-accent-blue), var(--geek-accent-purple));
 }

@@ -37,7 +37,7 @@ function ToolCallTags({ items }: { items: ToolCallInfo[] }) {
   return (
     <Space size={[4, 4]} wrap style={{ marginBottom: 4 }}>
       {items.map((t, i) => (
-        <Tag key={i} icon={<SearchOutlined />} color="processing">
+        <Tag key={i} icon={<SearchOutlined />} color="success">
           {t.content}
         </Tag>
       ))}

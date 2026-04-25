@@ -37,12 +37,12 @@ export function fileParseStatusLabel(status: FileParseStatus | undefined | null)
 
 export function fileParseStatusTagColor(
   status: FileParseStatus | undefined | null
-): "default" | "success" | "processing" | "warning" {
+): "default" | "success" | "warning" {
   switch (status) {
     case "parsed":
       return "success";
     case "pending":
-      return "processing";
+      return "success";
     default:
       return "default";
   }
@@ -65,13 +65,13 @@ export function pipelineStatusLabel(status: KnowledgePipelineStatus | undefined 
 
 export function pipelineStatusTagColor(
   status: KnowledgePipelineStatus | undefined | null
-): "default" | "success" | "processing" | "error" | "warning" {
+): "default" | "success" | "error" | "warning" {
   switch (status) {
     case "indexed":
       return "success";
     case "queued":
     case "indexing":
-      return "processing";
+      return "success";
     case "failed":
       return "error";
     case "ready_to_index":

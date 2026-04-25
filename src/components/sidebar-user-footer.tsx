@@ -31,8 +31,8 @@ export function SidebarUserFooter({ collapsed, sidebarIsDark, onToggleCollapsed 
 
   const primaryText = sidebarIsDark ? "#ffffff" : token.colorText;
   const secondaryText = sidebarIsDark ? "rgba(255,255,255,0.45)" : token.colorTextSecondary;
-  const footerBg = sidebarIsDark ? "#111318" : token.colorBgContainer;
-  const border = `1px solid ${sidebarIsDark ? "rgba(255,255,255,0.08)" : token.colorBorderSecondary}`;
+  const footerBg = sidebarIsDark ? "#162032" : token.colorBgContainer;
+  const border = `1px solid ${sidebarIsDark ? "rgba(148,163,184,0.24)" : token.colorBorderSecondary}`;
 
   const settingsPanel = (
     <div className="min-w-[200px] py-1">
@@ -117,7 +117,7 @@ export function SidebarUserFooter({ collapsed, sidebarIsDark, onToggleCollapsed 
         onClick={onToggleCollapsed}
         className="flex w-full items-center justify-center py-2.5 transition-colors"
         style={{
-          background: token.colorPrimary,
+          background: "linear-gradient(135deg, #3B82F6, #8B5CF6)",
           color: "#fff",
           borderTop: border,
         }}
