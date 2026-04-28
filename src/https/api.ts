@@ -1,10 +1,25 @@
 import { getApiVersionedBase } from "@/lib/api-base";
+import { getAccessToken } from "@/api/auth-storage";
 import { createHttps } from "./https";
 
-const prefixUrl = getApiVersionedBase();
+const prefixUrl = getApiVersionedBase() || "http://localhost:8888/v1";
 
 /**
- * 带环境变量前缀的 API 客户端（实际请求根为 `{origin}/v1`，见 `src/lib/api-base.ts`）。
- * 未配置 `NEXT_PUBLIC_API_BASE_URL` 时，在浏览器中默认使用当前页面的 origin + `/v1`。
+ * 带环境变量前缀的 API 客户端。
+ * 注入公共 JWT 鉴权拦截器。
  */
-export const api = createHttps(prefixUrl ? { prefixUrl } : {});
+export const api = createHttps({
+  prefixUrl,
+  hooks: {
+    beforeRequest: [
+      (req) => {
+        if (typeof window !== "undefined") {
+          const token = getAccessToken();
+          if (token) {
+            req.headers.set("Authorization", `Bearer ${token}`);
+          }
+        }
+      },
+    ],
+  },
+});

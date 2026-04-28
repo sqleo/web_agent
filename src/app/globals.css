@@ -9,6 +9,26 @@
   --geek-sidebar: #162032;
   --geek-accent-blue: #3b82f6;
   --geek-accent-purple: #8b5cf6;
+
+  /* 新增配色变量 (亮色模式) */
+  --bg: #F8FAFC;
+  --bg2: #FFFFFF;
+  --bg3: #F1F5F9;
+  --text: #0F172A;
+  --muted: #475569;
+  --border: #E2E8F0;
+  --grad: linear-gradient(135deg, #2563EB, #7C3AED);
+}
+
+html[data-theme="dark"] {
+  /* 新增配色变量 (暗色模式) */
+  --bg: #0F172A;
+  --bg2: #1E293B;
+  --bg3: #162032;
+  --text: #F1F5F9;
+  --muted: #64748B;
+  --border: rgba(255, 255, 255, 0.08);
+  --grad: linear-gradient(135deg, #3b82f6, #8b5cf6);
 }
 
 @theme inline {

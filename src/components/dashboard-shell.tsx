@@ -34,6 +34,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/customer-service": "智能客服",
   "/graph-service": "智能 Graph",
   "/entity-candidates": "候选实体审核",
+  "/report": "智能研报",
   "/settings": "账户设置",
 };
 
@@ -48,6 +49,7 @@ const MENU_KEYS = [
   "/graph-service",
   "/entity-candidates",
   "/vendors",
+  "/report",
 ] as const;
 
 function normalizePath(path: string): string {
@@ -156,6 +158,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   key: "/ai-tool",
                   icon: <RocketOutlined />,
                   label: "AI tool",
+                },
+                {
+                  key: "/report",
+                  icon: <FileSearchOutlined />,
+                  label: "智能研报",
                 },
                 {
                   key: "/chat",
