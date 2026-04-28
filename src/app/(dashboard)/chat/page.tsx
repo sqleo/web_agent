@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 
-const ChatPanel = dynamic(() => import("./chat-panel").then((m) => m.ChatPanel), {
+const ChatPanel = dynamic(() => import("@/features/chat/components/ChatPanel").then((m) => m.ChatPanel), {
   ssr: false,
   loading: () => null,
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChatPanel, GRAPH_SERVICE_CHAT_STORAGE_KEY } from "../chat/chat-panel";
+import { ChatPanel, GRAPH_SERVICE_CHAT_STORAGE_KEY } from "@/features/chat/components/ChatPanel";
 
 export default function GraphServiceChatPanel() {
   return (

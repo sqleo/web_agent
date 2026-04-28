@@ -3,7 +3,7 @@
 import { Card, Spin, Switch, Table, Typography, message, theme } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type AgentToolRow, getAgentTools, putAgentToolsSettings } from "@/api/agent-tools";
+import { type AgentToolRow, getAgentTools, putAgentToolsSettings } from "@/features/ai-tool/api/agent-tools";
 import { DashboardPageCard } from "@/components/dashboard-page-card";
 
 type RowState = AgentToolRow & { key: string };

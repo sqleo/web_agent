@@ -1,6 +1,6 @@
 "use client";
 
-import { ChatPanel, CUSTOMER_SERVICE_CHAT_STORAGE_KEY } from "../chat/chat-panel";
+import { ChatPanel, CUSTOMER_SERVICE_CHAT_STORAGE_KEY } from "@/features/chat/components/ChatPanel";
 
 export default function CustomerServiceChatPanel() {
   return (

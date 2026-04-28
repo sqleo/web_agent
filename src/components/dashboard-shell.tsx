@@ -34,7 +34,6 @@ const ROUTE_TITLES: Record<string, string> = {
   "/customer-service": "智能客服",
   "/graph-service": "智能 Graph",
   "/entity-candidates": "候选实体审核",
-  "/report-agent": "智能报告",
   "/settings": "账户设置",
 };
 
@@ -48,7 +47,6 @@ const MENU_KEYS = [
   "/customer-service",
   "/graph-service",
   "/entity-candidates",
-  "/report-agent",
   "/vendors",
 ] as const;
 
@@ -178,11 +176,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   key: "/entity-candidates",
                   icon: <AuditOutlined />,
                   label: "候选实体审核",
-                },
-                {
-                  key: "/report-agent",
-                  icon: <FileSearchOutlined />,
-                  label: "智能报告",
                 },
                 {
                   key: "/vendors",
