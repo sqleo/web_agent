@@ -34,7 +34,7 @@ export function ReportList({
                 onClick={() => onSelect(item)}
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  {item.status === "generating" ? (
+                  {item.status === "running" || item.status === "waiting_review" ? (
                     <LoadingOutlined className="text-blue-500 shrink-0" />
                   ) : (
                     <FileTextOutlined className="text-gray-400 shrink-0" />
@@ -47,12 +47,12 @@ export function ReportList({
                       <Typography.Text type="secondary" className="text-xs">
                         {item.created_at.slice(5, 16)}
                       </Typography.Text>
-                      {item.status === "generating" && (
+                      {(item.status === "running" || item.status === "waiting_review") && (
                         <Tag color="blue" className="text-[10px] px-1 py-0 m-0">
-                          生成中
+                          {item.status === "waiting_review" ? "待审核" : "进行中"}
                         </Tag>
                       )}
-                      {item.status === "success" && (
+                      {item.status === "completed" && (
                         <Tag color="green" className="text-[10px] px-1 py-0 m-0">
                           完成
                         </Tag>

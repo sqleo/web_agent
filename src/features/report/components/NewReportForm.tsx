@@ -68,11 +68,14 @@ export function NewReportForm({ onSubmit, confirmLoading }: NewReportFormProps) 
             </span>
           }
         >
-          <Input.TextArea
-            rows={4}
-            placeholder="例如：分析 2026 年固态电池市场竞争格局，重点关注中国企业..."
-            className="bg-[#111827] border-slate-800 text-slate-100 rounded-xl hover:border-slate-700 focus:border-blue-500"
-          />
+          <div className="relative p-[1px] rounded-[13px] overflow-hidden group w-full transition-all">
+            <div className="absolute inset-0 aurora-border-gradient aurora-border-anim opacity-100" />
+            <Input.TextArea
+              rows={4}
+              placeholder="例如：分析 2026 年固态电池市场竞争格局，重点关注中国企业..."
+              className="relative bg-[#1E293B] border-none text-slate-100 rounded-xl hover:bg-[#1E293B]/90 focus:bg-[#1E293B] shadow-inner z-10 m-0 w-full"
+            />
+          </div>
         </Form.Item>
 
         {/* Report Type */}
@@ -188,14 +191,20 @@ export function NewReportForm({ onSubmit, confirmLoading }: NewReportFormProps) 
             >
               保存草稿
             </Button>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={confirmLoading}
-              className="h-12 flex-[3] bg-gradient-to-r from-blue-600 to-purple-600 border-none hover:from-blue-500 hover:to-purple-500 rounded-xl font-semibold tracking-wide text-white"
-            >
-              启动 Agent 研究
-            </Button>
+            <div className="relative p-[1px] rounded-[13px] overflow-hidden flex-[3]">
+              <div className="absolute inset-0 aurora-border-gradient aurora-border-anim opacity-100" />
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={confirmLoading}
+                className="relative h-12 w-full bg-[#1E293B] hover:bg-transparent border-none rounded-xl font-semibold tracking-wide text-white z-10 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all"
+                style={{
+                  background: "linear-gradient(135deg, rgba(59, 130, 246, 0.8), rgba(139, 92, 246, 0.8))",
+                }}
+              >
+                启动 Agent 研究
+              </Button>
+            </div>
           </div>
           <span className="text-slate-500 text-xs">
             ⏱ 预计完成时间：12-20 分钟 · 大纲完成后将暂停等待审核

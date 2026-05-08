@@ -25,21 +25,21 @@ export function ReportViewer({ item }: ReportViewerProps) {
       variant="borderless"
       className="h-full overflow-auto"
     >
-      <div className="mb-4 flex flex-wrap gap-2">
-        {item.keywords?.map((k) => (
-          <Typography.Text code key={k} className="text-xs">
-            {k}
+      {item.subtitle ? (
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Typography.Text code className="text-xs">
+            {item.subtitle}
           </Typography.Text>
-        ))}
-      </div>
+        </div>
+      ) : null}
 
-      {item.status === "generating" ? (
+      {item.status === "running" || item.status === "waiting_review" ? (
         <div className="max-w-md mx-auto mt-8">
           <ReportProgress item={item} />
         </div>
-      ) : item.status === "success" && item.content ? (
+      ) : item.finalReport?.markdown ? (
         <div className="bg-[var(--bg)] p-4 rounded-lg border border-solid border-[var(--border)]">
-          <MarkdownProse markdown={item.content} />
+          <MarkdownProse markdown={item.finalReport.markdown} />
         </div>
       ) : (
         <Empty description="研报生成失败或内容为空" />

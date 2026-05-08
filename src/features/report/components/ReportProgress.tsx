@@ -9,6 +9,7 @@ interface ReportProgressProps {
 
 export function ReportProgress({ item }: ReportProgressProps) {
   if (!item.progress) return null;
+  const { progress } = item;
 
   return (
     <Card size="small" variant="borderless" className="bg-[var(--bg3)] rounded-lg">
@@ -18,12 +19,12 @@ export function ReportProgress({ item }: ReportProgressProps) {
             当前阶段
           </Typography.Text>
           <Typography.Title level={5} className="!m-0 text-blue-500">
-            {item.progress.current_step}
+            {progress.current_step}
           </Typography.Title>
         </div>
         <Progress
           type="circle"
-          percent={item.progress.percent}
+          percent={progress.percent}
           size={50}
           strokeColor="var(--ant-color-primary)"
         />
@@ -32,8 +33,8 @@ export function ReportProgress({ item }: ReportProgressProps) {
       <Steps
         direction="vertical"
         size="small"
-        current={item.progress.steps.findIndex((s) => s.status === "process" || s.status === "wait" === false)}
-        items={item.progress.steps.map((step) => ({
+        current={progress.steps.findIndex((s) => s.status === "process" || s.status === "finish")}
+        items={progress.steps.map((step) => ({
           title: step.name,
           status: step.status,
         }))}

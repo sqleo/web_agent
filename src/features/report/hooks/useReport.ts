@@ -1,319 +1,234 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { App, message } from "antd";
-import { getReports, createReport, deleteReport, generateReport, getStreamUrl, resumeReport } from "../api/report";
-import { getApiVersionedBase } from "@/lib/api-base";
-import { getAccessToken } from "@/api/auth-storage";
-import { api } from "@/https";
+import {
+  generateReportStream,
+  getReportHistory,
+  listReportHistories,
+  resumeReportStream,
+} from "../api/report";
 import { parseSseStream } from "../utils/sse-parser";
-import type { ReportItem, CreateReportBody } from "../types";
+import { applyReportStreamEvent, mapReportHistoryDetail, mapReportHistoryItem } from "../utils/report-mappers";
+import type { CreateReportBody, ExecutionLog, ReportItem } from "../types";
+
+function buildUserQuery(values: CreateReportBody): string {
+  const sections = [values.topic.trim()];
+  if (values.keywords?.length) {
+    sections.push(`偏好标签：${values.keywords.join("、")}`);
+  }
+  if (values.extra?.trim()) {
+    sections.push(`额外要求：${values.extra.trim()}`);
+  }
+  return sections.join("\n");
+}
+
+function replaceReport(items: ReportItem[], report: ReportItem): ReportItem[] {
+  const exists = items.some((item) => item.id === report.id);
+  if (!exists) {
+    return [report, ...items];
+  }
+  return items.map((item) => (item.id === report.id ? { ...item, ...report } : item));
+}
+
+function patchStreamEvent(items: ReportItem[], matchIds: string[], event: ExecutionLog): ReportItem[] {
+  return items.map((item) =>
+    matchIds.includes(item.id) ? applyReportStreamEvent(item, event) : item
+  );
+}
 
 export function useReport() {
-  const { message: messageApi } = App.useApp();
-  const msg = messageApi || message;
+  const { message: appMessage } = App.useApp();
+  const msg = appMessage || message;
 
   const [loading, setLoading] = useState(false);
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [selectedReport, setSelectedReport] = useState<ReportItem | null>(null);
-
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const loadReports = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await getReports();
-      setReports(data);
-      if (data.length > 0 && !selectedReport) {
-        setSelectedReport(data[0]);
+  const selectReport = useCallback(
+    async (threadId: string, fallback?: ReportItem) => {
+      if (fallback) {
+        setSelectedReport(fallback);
       }
-    } catch (e) {
-      void msg.error("加载研报失败");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedReport]);
+      try {
+        const detail = mapReportHistoryDetail(await getReportHistory(threadId));
+        setReports((prev) => replaceReport(prev, detail));
+        setSelectedReport(detail);
+      } catch (error) {
+        if (fallback) {
+          setSelectedReport(fallback);
+          return;
+        }
+        throw error;
+      }
+    },
+    []
+  );
+
+  const loadReports = useCallback(
+    async (preferredThreadId?: string) => {
+      setLoading(true);
+      try {
+        const data = await listReportHistories();
+        const items = data.items.map(mapReportHistoryItem);
+        setReports(items);
+
+        const targetId = preferredThreadId || selectedReport?.id || items[0]?.id;
+        if (!targetId) {
+          setSelectedReport(null);
+          return;
+        }
+
+        const fallback = items.find((item) => item.id === targetId);
+        if (fallback) {
+          await selectReport(targetId, fallback);
+        }
+      } catch {
+        void msg.error("加载研报失败");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [msg, selectReport, selectedReport?.id]
+  );
 
   useEffect(() => {
     void loadReports();
   }, [loadReports]);
 
-  // 模拟轮询，让生成中的报告推进进度
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setReports((prev) => {
-        let changed = false;
-        const next = prev.map((r) => {
-          if (r.status === "generating") {
-            changed = true;
-            // Dummy upgrade status for mock
-            return {
-              ...r,
-              status: "success" as const,
-              content: `# ${r.topic}\n\n## 研报正文\n报告生成时间：${new Date().toLocaleString()}`,
-            };
-          }
-          return r;
-        });
+  const handleSelectReport = useCallback(
+    async (item: ReportItem) => {
+      try {
+        await selectReport(item.id, item);
+      } catch {
+        void msg.error("加载研报详情失败");
+      }
+    },
+    [msg, selectReport]
+  );
 
-        if (changed) {
-          const updatedSelected = next.find((r) => r.id === selectedReport?.id);
-          if (updatedSelected) {
-            setSelectedReport(updatedSelected);
-          }
-          return next;
+  const consumeStream = useCallback(
+    async (response: Response, optimisticId: string) => {
+      if (!response.body) {
+        return optimisticId;
+      }
+
+      let activeId = optimisticId;
+      await parseSseStream(response.body, (chunk: ExecutionLog) => {
+        if (chunk.thread_id) {
+          activeId = chunk.thread_id;
         }
-        return prev;
-      });
-    }, 5000);
-
-    return () => clearInterval(timer);
-  }, [selectedReport]);
-
-  const startPollingStream = useCallback(async (threadId: string) => {
-    try {
-      const url = getStreamUrl(threadId);
-      const token = getAccessToken();
-      const res = await fetch(url, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      if (!res.body) return;
-
-      await parseSseStream(res.body, (data) => {
-        setReports((prev) =>
-          prev.map((r) => {
-            if (r.id !== threadId) return r;
-            const updatedLogs = [...(r.logs || []), data];
-            const updates: any = { logs: updatedLogs };
-
-            if (data.type === "phase") {
-              updates.phase = data.phase;
-              updates.message = data.message;
-            }
-            if (data.type === "interrupted") {
-              updates.isInterrupted = true;
-              updates.interruptPayload = data.payload;
-              if (data.payload?.data?.intent) {
-                updates.intentData = data.payload.data.intent;
-              }
-              if (data.payload?.data?.outline) {
-                updates.outlineData = data.payload.data.outline;
-              }
-            }
-            return { ...r, ...updates };
-          })
-        );
-
+        const matchIds = activeId === optimisticId ? [optimisticId, activeId] : [activeId];
+        setReports((prev) => patchStreamEvent(prev, matchIds, chunk));
         setSelectedReport((prev) => {
-          if (prev?.id !== threadId) return prev;
-          const updatedLogs = [...(prev.logs || []), data];
-          const updates: any = { logs: updatedLogs };
-
-          if (data.type === "phase") {
-            updates.phase = data.phase;
-            updates.message = data.message;
+          if (!prev || !matchIds.includes(prev.id)) {
+            return prev;
           }
-          if (data.type === "interrupted") {
-            updates.isInterrupted = true;
-            updates.intentData = data.payload?.data?.intent || updates.intentData;
-          }
-          return { ...prev, ...updates };
+          return applyReportStreamEvent(prev, chunk);
         });
       });
-    } catch (error) {
-      console.error("SSE stream error:", error);
-    }
-  }, []);
 
-  const handleCreate = async (values: CreateReportBody) => {
-    setSubmitting(true);
-    let threadId = String(Date.now());
+      return activeId;
+    },
+    []
+  );
 
-    try {
-      const response = await api.stream("POST", "report/generate", {
-        json: {
-          user_query: values.topic,
-        },
-      });
-
-      void msg.success("已启动后端 Agent 研究");
-
-      const newReport: ReportItem = {
-        id: threadId,
+  const handleCreate = useCallback(
+    async (values: CreateReportBody) => {
+      setSubmitting(true);
+      const optimisticId = `pending-${Date.now()}`;
+      const optimisticItem: ReportItem = {
+        id: optimisticId,
         topic: values.topic,
-        status: "generating",
-        created_at: new Date().toLocaleString().slice(5, 16),
+        status: "running",
+        stage: "intent",
+        created_at: new Date().toISOString(),
+        message: "任务已提交，等待 Agent 启动",
+        sources: [],
+        outline: [],
+        sections: [],
+        logs: [],
       };
 
-      setReports((prev) => [newReport, ...prev]);
-      setSelectedReport(newReport);
-      setCreateModalOpen(false);
+      setReports((prev) => [optimisticItem, ...prev]);
+      setSelectedReport(optimisticItem);
 
-      if (!response.body) return;
-
-      await parseSseStream(response.body, (data) => {
-        // 捕获 thread_id
-        if (data.thread_id) {
-          threadId = data.thread_id;
-        }
-
-        setReports((prev) =>
-          prev.map((r) => {
-            if (r.id !== newReport.id && r.id !== threadId) return r;
-            const updatedLogs = [...(r.logs || []), data];
-            const updates: any = { logs: updatedLogs };
-
-            if (data.thread_id) updates.id = data.thread_id;
-            if (data.type === "phase") {
-              updates.phase = data.phase;
-              updates.message = data.message;
-            }
-            if (data.type === "interrupted") {
-              updates.isInterrupted = true;
-              updates.interruptPayload = data.payload;
-              if (data.payload?.data?.intent) {
-                updates.intentData = data.payload.data.intent;
-              }
-              if (data.payload?.data?.outline) {
-                updates.outlineData = data.payload.data.outline;
-              }
-            }
-            return { ...r, ...updates };
-          })
-        );
-
-        setSelectedReport((prev) => {
-          if (prev?.id !== newReport.id && prev?.id !== threadId) return prev;
-          const updatedLogs = [...(prev.logs || []), data];
-          const updates: any = { logs: updatedLogs };
-
-          if (data.thread_id) updates.id = data.thread_id;
-          if (data.type === "phase") {
-            updates.phase = data.phase;
-            updates.message = data.message;
-          }
-          if (data.type === "interrupted") {
-            updates.isInterrupted = true;
-            updates.interruptPayload = data.payload;
-            if (data.payload?.data?.intent) {
-              updates.intentData = data.payload.data.intent;
-            }
-            if (data.payload?.data?.outline) {
-              updates.outlineData = data.payload.data.outline;
-            }
-          }
-          return { ...prev, ...updates };
+      try {
+        const response = await generateReportStream({
+          user_query: buildUserQuery(values),
         });
-      });
-    } catch (e) {
-      console.error("启动研究失败:", e);
-      void msg.error("启动研究失败，请检查后端服务");
-    } finally {
-      setSubmitting(false);
-    }
-  };
+        void msg.success("已启动后端 Agent 研究");
+        const threadId = await consumeStream(response, optimisticId);
+        await loadReports(threadId);
+      } catch (error) {
+        setReports((prev) =>
+          prev.map((item) =>
+            item.id === optimisticId
+              ? { ...item, status: "failed", lastError: error instanceof Error ? error.message : "启动失败" }
+              : item
+          )
+        );
+        setSelectedReport((prev) =>
+          prev?.id === optimisticId
+            ? {
+                ...prev,
+                status: "failed",
+                lastError: error instanceof Error ? error.message : "启动失败",
+              }
+            : prev
+        );
+        void msg.error("启动研究失败，请检查后端服务");
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [consumeStream, loadReports, msg]
+  );
 
-  const handleResume = async (threadId: string) => {
-    try {
-      const targetNode = (selectedReport as any)?.interruptPayload?.metadata?.node_name || "human_review_intent";
-      const response = await api.stream("POST", "report/resume", {
-        json: {
+  const handleResume = useCallback(
+    async (threadId: string) => {
+      const nodeName =
+        typeof selectedReport?.interrupt?.payload?.metadata === "object"
+          ? String(
+              ((selectedReport.interrupt.payload.metadata as Record<string, unknown>).node_name as string) ||
+                "human_review"
+            )
+          : "human_review";
+
+      try {
+        const response = await resumeReportStream({
           thread_id: threadId,
           action: "confirm",
-          metadata: {
-            node_name: targetNode,
-          },
-        },
-      });
-
-      void msg.success("确认成功，开始继续调研");
-
-      setReports((prev) =>
-        prev.map((r) => (r.id === threadId ? { ...r, isInterrupted: false } : r))
-      );
-      setSelectedReport((prev) =>
-        prev?.id === threadId ? { ...prev, isInterrupted: false } : prev
-      );
-
-      if (response.body) {
-        await parseSseStream(response.body, (data) => {
-          setReports((prev) =>
-            prev.map((r) => {
-              if (r.id !== threadId) return r;
-              const updatedLogs = [...(r.logs || []), data];
-              const updates: any = { logs: updatedLogs };
-
-              if (data.type === "phase") {
-                updates.phase = data.phase;
-                updates.message = data.message;
-              }
-              if (data.type === "interrupted") {
-                updates.isInterrupted = true;
-                updates.interruptPayload = data.payload;
-                if (data.payload?.data?.intent) {
-                  updates.intentData = data.payload.data.intent;
-                }
-                if (data.payload?.data?.outline) {
-                  updates.outlineData = data.payload.data.outline;
-                }
-              }
-              return { ...r, ...updates };
-            })
-          );
-
-          setSelectedReport((prev) => {
-            if (prev?.id !== threadId) return prev;
-            const updatedLogs = [...(prev.logs || []), data];
-            const updates: any = { logs: updatedLogs };
-
-            if (data.type === "phase") {
-              updates.phase = data.phase;
-              updates.message = data.message;
-            }
-            if (data.type === "interrupted") {
-              updates.isInterrupted = true;
-              updates.interruptPayload = data.payload;
-              if (data.payload?.data?.intent) {
-                updates.intentData = data.payload.data.intent;
-              }
-              if (data.payload?.data?.outline) {
-                updates.outlineData = data.payload.data.outline;
-              }
-            }
-            return { ...prev, ...updates };
-          });
+          metadata: { node_name: nodeName },
         });
+        setReports((prev) =>
+          prev.map((item) =>
+            item.id === threadId ? { ...item, interrupt: null, status: "running" } : item
+          )
+        );
+        setSelectedReport((prev) =>
+          prev?.id === threadId ? { ...prev, interrupt: null, status: "running" } : prev
+        );
+        void msg.success("已继续执行研报流程");
+        const activeThreadId = await consumeStream(response, threadId);
+        await loadReports(activeThreadId);
+      } catch {
+        void msg.error("继续执行失败，请检查后端服务");
       }
-    } catch (e) {
-      console.error("恢复研究流失败:", e);
-      void msg.error("确认失败，请检查后端服务");
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteReport(id);
-      void msg.success("删除成功");
-      await loadReports();
-      if (selectedReport?.id === id) {
-        setSelectedReport(null);
-      }
-    } catch (e) {
-      void msg.error("删除失败");
-    }
-  };
+    },
+    [consumeStream, loadReports, msg, selectedReport?.interrupt]
+  );
 
   return {
     loading,
     reports,
     selectedReport,
-    setSelectedReport,
+    setSelectedReport: handleSelectReport,
     handleResume,
     createModalOpen,
     setCreateModalOpen,
     submitting,
     handleCreate,
-    handleDelete,
+    reloadReports: loadReports,
   };
 }
